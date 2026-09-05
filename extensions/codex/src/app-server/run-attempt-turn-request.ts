@@ -157,7 +157,6 @@ export async function prepareCodexAttemptTurnRequest(
               modelProvider: resourceState.thread.modelProvider,
             }),
         turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,
-        skillsCollaborationInstructions: context.skillsCollaborationInstructions,
         memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
         preserveNativeTurnSettings: usesSupervisionConnection,
         parentLocalEgress: inferenceRoute !== undefined,
