@@ -191,7 +191,6 @@ export async function prepareCodexAttemptContext(
       dynamicTools: toolBridge.availableSpecs,
     }),
     agentWorkspaceDeveloperInstructions,
-    skillsInstructions,
   );
   const watchedSessionsContext = buildCodexWatchedSessionsContext({
     attempt: runtimeParams,

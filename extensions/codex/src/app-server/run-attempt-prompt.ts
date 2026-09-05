@@ -469,9 +469,13 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,
     memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
   };
+  // Observability view of the whole developer surface the model sees (reports,
+  // trajectory, size estimates). The lifecycle receives the generic policy and the
+  // skill catalog separately; joining them here must never feed thread requests.
   const buildRenderedCodexDeveloperInstructions = () =>
     joinPresentSections(
       turnState.promptBuild.developerInstructions,
+      skillsInstructions,
       (parentLocalEgress
         ? buildCodexParentLocalInstructions(params, parentLocalContext)
         : buildTurnCollaborationMode(params, parentLocalContext).settings.developer_instructions) ??

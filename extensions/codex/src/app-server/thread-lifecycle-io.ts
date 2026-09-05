@@ -176,6 +176,7 @@ export async function resumeExistingCodexThread(
         appServer: params.appServer,
         dynamicTools: params.dynamicTools,
         developerInstructions: params.developerInstructions,
+        skillsInstructions: params.skillsInstructions,
         config: resumeConfig,
         nativeCodeModeEnabled: params.nativeCodeModeEnabled,
         nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
@@ -514,6 +515,7 @@ export async function startFreshCodexThread(
       dynamicTools: params.dynamicTools,
       appServer: params.appServer,
       developerInstructions: params.developerInstructions,
+      skillsInstructions: params.skillsInstructions,
       config,
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
@@ -706,7 +708,12 @@ export async function startFreshCodexThread(
       response.modelProvider ?? requestModelProvider ?? startModelProvider ?? modelProvider,
     // Restricted ephemeral threads also need creation policy for fenced warm reuse.
     ...(startParams.ephemeral
-      ? { liveThreadEphemeralPolicy: startParams.developerInstructions }
+      ? {
+          liveThreadEphemeralPolicy: {
+            developerInstructions: params.developerInstructions,
+            skillsInstructions: params.skillsInstructions,
+          },
+        }
       : {}),
     // Transient starts do not own the persisted binding, so their native
     // subscriptions must be released instead of entering the warm cache.

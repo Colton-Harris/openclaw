@@ -16,7 +16,7 @@ export type ThreadReleaseTransition = {
 export type RetainedLiveThread = {
   ownerToken?: ThreadOwnerToken;
   configFingerprint?: string;
-  ephemeralPolicy?: string;
+  ephemeralPolicy?: import("./client-runtime.js").CodexEphemeralThreadPolicy;
   serviceTier?: CodexServiceTier | null;
   expiresAt: number;
   release: (threadId: string, assertCurrent?: () => void) => Promise<void>;

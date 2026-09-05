@@ -35,11 +35,20 @@ type ClientRuntime = ThreadOwnershipState & {
   evictionTimer?: ReturnType<typeof setTimeout>;
 };
 
+/**
+ * Exact lifecycle inputs a live ephemeral thread was told. The generic policy is
+ * creation-owned and cannot be refreshed or cold-resumed; the skill catalog is the
+ * one refreshable section and records the catalog last delivered to the thread.
+ */
+export type CodexEphemeralThreadPolicy = {
+  developerInstructions?: string;
+  skillsInstructions?: string;
+};
+
 export type CodexAppServerLiveThreadOwnership = {
   assertCurrent: () => void;
   configFingerprint?: string;
-  /** Ephemeral configuration is creation-owned and cannot be refreshed or cold-resumed. */
-  ephemeralPolicy?: string;
+  ephemeralPolicy?: CodexEphemeralThreadPolicy;
   serviceTier?: CodexServiceTier | null;
   /** Releases this active claim or the exact idle record it published. */
   release: (threadId: string, assertCurrent?: () => void) => Promise<void>;
@@ -429,7 +438,7 @@ export async function retainCodexAppServerLiveThread(
   releaseThread?: (threadId: string, assertCurrent?: () => void) => Promise<void>,
   configFingerprint?: string,
   serviceTier?: CodexServiceTier | null,
-  ephemeralPolicy?: string,
+  ephemeralPolicy?: CodexEphemeralThreadPolicy,
 ): Promise<boolean> {
   const runtime = configuredClients.get(client);
   if (!runtime || runtime.closed) {
