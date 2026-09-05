@@ -189,7 +189,6 @@ export async function prepareCodexAttemptTurnRequest(
             modelProvider: resourceState.thread.modelProvider,
           }),
       turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,
-      skillsCollaborationInstructions: context.skillsCollaborationInstructions,
       memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
       preserveNativeTurnSettings: usesSupervisionConnection,
       parentLocalEgress: inferenceRoute !== undefined,
@@ -236,8 +235,7 @@ export async function prepareCodexAttemptTurnRequest(
           : (buildCodexParentLocalInstructions(runtimeParams, {
               turnScopedDeveloperInstructions:
                 workspaceBootstrapContext.turnScopedDeveloperInstructions,
-              skillsCollaborationInstructions: context.skillsCollaborationInstructions,
-              memoryCollaborationInstructions:
+                      memoryCollaborationInstructions:
                 workspaceBootstrapContext.memoryCollaborationInstructions,
             }) ?? ""),
         signal: runAbortController.signal,

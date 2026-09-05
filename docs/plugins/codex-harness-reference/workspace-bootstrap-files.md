@@ -48,7 +48,12 @@ Codex harness forwards the other bootstrap files as developer instructions:
   private relay leaves native base/catalog instructions and history intact,
   so newly delivered persona and user-profile context are not automatically
   inherited by native Codex subagents.
-- The compact loaded OpenClaw skills list uses the same parent-local layer.
+- The compact loaded OpenClaw skills list is forwarded as ordinary thread
+  developer instructions instead of the parent-local layer. Model-owned
+  collaboration-mode messages cannot replace this catalog. Native Codex
+  subagents can inherit the catalog with the parent thread's developer
+  instructions; this does not move workspace persona or memory context into
+  that carrier.
 - Heartbeat turns receive generic initiative guidance through collaboration
   mode. Monitor cron scratch is appended to the heartbeat prompt instead of
   injected as workspace context.

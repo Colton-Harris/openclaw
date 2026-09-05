@@ -59,7 +59,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     buildActiveContextEngineRuntimeContext,
     baseDeveloperInstructions,
     buildOpenClawPromptContext,
-    skillsCollaborationInstructions,
+    skillsInstructions,
     promptState,
     codexContextProjectionMaxChars,
     codexContinuityProjectionMaxChars,
@@ -467,7 +467,6 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
   let parentLocalEgress = false;
   const parentLocalContext = {
     turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,
-    skillsCollaborationInstructions,
     memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
   };
   const buildRenderedCodexDeveloperInstructions = () =>
@@ -645,7 +644,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       developerInstructions: buildRenderedCodexDeveloperInstructions(),
       workspaceBootstrapContext,
       omitWorkspaceReferences,
-      skillsPrompt: skillsCollaborationInstructions ? (params.skillsSnapshot?.prompt ?? "") : "",
+      skillsPrompt: skillsInstructions ? (params.skillsSnapshot?.prompt ?? "") : "",
       tools: toolBridge.availableSpecs,
     });
   const systemPromptReport = buildSystemPromptReport();

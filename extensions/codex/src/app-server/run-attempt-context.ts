@@ -13,7 +13,7 @@ import {
   buildCodexOpenClawPromptContext,
   buildCodexWatchedSessionsContext,
   readMirroredSessionHistoryMessages,
-  renderCodexSkillsCollaborationInstructions,
+  renderCodexSkillsInstructions,
 } from "./attempt-context.js";
 import {
   buildCodexWorkspaceBootstrapContext,
@@ -182,11 +182,16 @@ export async function prepareCodexAttemptContext(
     sandboxed: sandbox?.enabled === true,
   });
   const agentWorkspaceDeveloperInstructions = workspaceBootstrapContext.threadDeveloperInstructions;
+  const skillsInstructions = renderCodexSkillsInstructions({
+    attempt: runtimeParams,
+    skillsPrompt: params.skillsSnapshot?.prompt,
+  });
   const baseDeveloperInstructions = joinPresentSections(
     buildDeveloperInstructions(runtimeParams, {
       dynamicTools: toolBridge.availableSpecs,
     }),
     agentWorkspaceDeveloperInstructions,
+    skillsInstructions,
   );
   const watchedSessionsContext = buildCodexWatchedSessionsContext({
     attempt: runtimeParams,
@@ -202,10 +207,6 @@ export async function prepareCodexAttemptContext(
         : undefined,
       watchedSessionsContext,
     });
-  const skillsCollaborationInstructions = renderCodexSkillsCollaborationInstructions({
-    attempt: runtimeParams,
-    skillsPrompt: params.skillsSnapshot?.prompt,
-  });
   const promptState = {
     promptText: params.prompt,
     promptContextRange: undefined as CodexProjectedContextRange | undefined,
@@ -242,7 +243,7 @@ export async function prepareCodexAttemptContext(
     agentWorkspaceDeveloperInstructions,
     baseDeveloperInstructions,
     buildOpenClawPromptContext,
-    skillsCollaborationInstructions,
+    skillsInstructions,
     promptState,
     codexContextProjectionMaxChars,
     codexContinuityProjectionMaxChars,
