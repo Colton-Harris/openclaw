@@ -20,6 +20,7 @@ import { resolveCodexBindingAppServerConnection } from "./binding-connection.js"
 import {
   consumeCodexAppServerLiveThread,
   retainCodexAppServerLiveThread,
+  revertCodexAppServerLiveThreadSkillsCatalog,
   type CodexAppServerLiveThreadOwnership,
 } from "./client-runtime.js";
 import {
@@ -259,6 +260,7 @@ export async function maybeCompactCodexAppServerSession(
         let releaseThreadSubscription: (() => Promise<void>) | undefined;
         let retainedThreadOwnership: CodexAppServerLiveThreadOwnership | undefined;
         let canRetainThreadOwnership = false;
+        let compactionSucceeded = false;
         let compactionRequestDefinitelyRejected = false;
         let tokensAfter: number | undefined;
         const releaseCompactionThread = async (threadId: string) => {
@@ -505,6 +507,7 @@ export async function maybeCompactCodexAppServerSession(
           if (!completion.completed) {
             throw new Error(completion.reason);
           }
+          compactionSucceeded = true;
           tokensAfter = completion.tokensAfter;
           if (completion.turnId && completion.itemId) {
             await persistCodexContextCompactionActivity({
@@ -546,6 +549,12 @@ export async function maybeCompactCodexAppServerSession(
         } finally {
           completionWatch.cancel();
           try {
+            if (compactionSucceeded) {
+              // An incognito thread keeps its separately owned subscription, so
+              // it never reaches the re-retain below. Correct its record in place
+              // or the discarded catalog refresh is never delivered again.
+              revertCodexAppServerLiveThreadSkillsCatalog(client, binding.threadId);
+            }
             if (canRetainThreadOwnership && retainedThreadOwnership) {
               const ownership = retainedThreadOwnership;
               const currentBinding = options.bindingStore.read(bindingIdentity);
