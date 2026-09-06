@@ -33,6 +33,7 @@ import type { CodexAttemptNotificationController } from "./run-attempt-notificat
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import type { CodexStartedTurn } from "./run-attempt-turn-request.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
+import { restoreCodexThreadSkillsCatalogAfterCompaction } from "./thread-policy.js";
 import {
   codexTranscriptMirrorRuntime,
   createCodexAppServerUserMessagePersistenceNotifier,
@@ -246,6 +247,23 @@ export function activateCodexAttemptTurn(
           });
         } catch (error) {
           embeddedAgentLog.warn("failed to restore Codex plan state after compaction", {
+            runId: params.runId,
+            threadId: resourceState.thread.threadId,
+            error: formatErrorMessage(error),
+          });
+        }
+        try {
+          // Compaction rebuilds initial context from the creation-time developer
+          // instructions, so a catalog refreshed in place is dropped here.
+          await restoreCodexThreadSkillsCatalogAfterCompaction({
+            client: resourceState.client,
+            threadId: resourceState.thread.threadId,
+            ephemeralPolicy: resourceState.thread.liveThreadEphemeralPolicy,
+            timeoutMs: connection.appServer.requestTimeoutMs,
+            signal: runAbortController.signal,
+          });
+        } catch (error) {
+          embeddedAgentLog.warn("failed to restore Codex skill catalog after compaction", {
             runId: params.runId,
             threadId: resourceState.thread.threadId,
             error: formatErrorMessage(error),

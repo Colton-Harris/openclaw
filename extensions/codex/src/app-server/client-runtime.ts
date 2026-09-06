@@ -43,6 +43,12 @@ type ClientRuntime = ThreadOwnershipState & {
 export type CodexEphemeralThreadPolicy = {
   developerInstructions?: string;
   skillsInstructions?: string;
+  /**
+   * Catalog carried by the thread's creation-time native developer instructions.
+   * Compaction rebuilds initial context from those instructions and drops the
+   * client-authored refresh, so this is the catalog a compacted thread reverts to.
+   */
+  nativeSkillsInstructions?: string;
 };
 
 export type CodexAppServerLiveThreadOwnership = {

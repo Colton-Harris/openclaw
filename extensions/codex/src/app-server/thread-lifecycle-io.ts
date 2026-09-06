@@ -712,6 +712,8 @@ export async function startFreshCodexThread(
           liveThreadEphemeralPolicy: {
             developerInstructions: params.developerInstructions,
             skillsInstructions: params.skillsInstructions,
+            // Creation carries the catalog natively, so compaction restores exactly this one.
+            nativeSkillsInstructions: params.skillsInstructions,
           },
         }
       : {}),
