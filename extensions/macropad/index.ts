@@ -15,10 +15,9 @@ import type {
   OpenClawPluginApi,
   OpenClawPluginServiceContext,
 } from "openclaw/plugin-sdk/plugin-entry";
-import { macropadContract } from "./contract.js";
+import { macropadContract, type MacropadDeviceStatus, type MacropadSlotList } from "./contract.js";
 import { createKeyedBindingStore, type OpenKeyedStoreLike } from "./src/binding-store.js";
 import { resolveMacropadConfig } from "./src/config.js";
-import type { MacropadDeviceStatus, MacropadSlotList } from "./src/contract-types.js";
 import {
   MACROPAD_AGENT_EVENT_STREAMS,
   MacropadService,

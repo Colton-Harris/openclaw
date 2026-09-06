@@ -6,6 +6,12 @@
  * test with no device, no Gateway, and no clock.
  */
 import { MACROPAD_SLOT_COUNT } from "../contract.js";
+import type {
+  MacropadDeviceStatus,
+  MacropadSlot,
+  MacropadSlotActivity,
+  MacropadSlotList,
+} from "../contract.js";
 import {
   bindSession,
   EMPTY_BINDER_STATE,
@@ -16,12 +22,6 @@ import {
 } from "./binder.js";
 import { createMemoryBindingStore, type MacropadBindingStore } from "./binding-store.js";
 import type { MacropadConfig } from "./config.js";
-import type {
-  MacropadDeviceStatus,
-  MacropadSlot,
-  MacropadSlotActivity,
-  MacropadSlotList,
-} from "./contract-types.js";
 import { MacropadDeviceLink, type DeviceLinkLogger } from "./device-link.js";
 import {
   composeBlankFrame,

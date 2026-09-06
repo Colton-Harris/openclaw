@@ -12,9 +12,14 @@
  * discouraged: `DeviceTransport.setFrame` accepts nothing else, and there is no
  * exported constructor that takes a caller-supplied array.
  */
-import { MACROPAD_EFFECTS, MACROPAD_SLOT_COUNT, type MacropadEffect } from "../contract.js";
+import {
+  MACROPAD_EFFECTS,
+  MACROPAD_SLOT_COUNT,
+  type MacropadEffect,
+  type MacropadKeyFrame,
+  type MacropadSlotActivity,
+} from "../contract.js";
 import { clampBrightness, MACROPAD_COLOR_OFF, resolveSessionColor } from "./colors.js";
-import type { MacropadKeyFrame, MacropadSlotActivity } from "./contract-types.js";
 
 declare const fullFrameBrand: unique symbol;
 

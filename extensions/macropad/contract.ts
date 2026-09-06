@@ -6,7 +6,7 @@
  * it; neither imports the other. Keep it free of Node-only and DOM-only APIs.
  */
 import { defineFeatureContract } from "openclaw/plugin-sdk/feature-contract";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 
 export const MACROPAD_PLUGIN_ID = "macropad";
 
@@ -172,8 +172,8 @@ export const macropadContract = defineFeatureContract({
 });
 
 export type MacropadContract = typeof macropadContract;
-export type MacropadDeviceStatus = typeof DeviceStatus.static;
-export type MacropadSlot = typeof Slot.static;
-export type MacropadSlotList = typeof SlotList.static;
-export type MacropadKeyFrame = typeof KeyFrame.static;
-export type MacropadSlotActivity = typeof SlotActivity.static;
+export type MacropadDeviceStatus = Static<typeof DeviceStatus>;
+export type MacropadSlot = Static<typeof Slot>;
+export type MacropadSlotList = Static<typeof SlotList>;
+export type MacropadKeyFrame = Static<typeof KeyFrame>;
+export type MacropadSlotActivity = Static<typeof SlotActivity>;

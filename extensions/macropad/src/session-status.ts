@@ -14,7 +14,7 @@
  * whatever the row said a few seconds ago, and the device would visibly lag the
  * UI it is supposed to mirror.
  */
-import type { MacropadSlotActivity } from "./contract-types.js";
+import type { MacropadSlotActivity } from "../contract.js";
 
 /** Activity for a bound key. `unbound` is a slot fact, not a session fact. */
 export type MacropadBoundActivity = Exclude<MacropadSlotActivity, "unbound">;

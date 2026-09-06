@@ -15,7 +15,7 @@
  * configurable base, capped, jittered, and `unref`'d so a dark macropad never
  * holds the Gateway's event loop open at shutdown.
  */
-import type { MacropadDeviceStatus } from "./contract-types.js";
+import type { MacropadDeviceStatus } from "../contract.js";
 import { assertFullFrame, framesEqual, type MacropadFullFrame } from "./frame-compositor.js";
 import type { DeviceInputEvent, DeviceTransport, DeviceTransportFactory } from "./transport.js";
 

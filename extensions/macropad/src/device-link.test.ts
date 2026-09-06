@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MACROPAD_SLOT_COUNT } from "../contract.js";
-import type { MacropadDeviceStatus } from "./contract-types.js";
+import type { MacropadDeviceStatus } from "../contract.js";
 import { MacropadDeviceLink, type DeviceLinkLogger } from "./device-link.js";
 import {
   composeBlankFrame,

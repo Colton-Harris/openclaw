@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MACROPAD_EFFECTS, MACROPAD_SLOT_COUNT } from "../contract.js";
+import {
+  MACROPAD_EFFECTS,
+  MACROPAD_SLOT_COUNT,
+  type MacropadDeviceStatus,
+  type MacropadSlotList,
+} from "../contract.js";
 import { createMemoryBindingStore, type PersistedBinding } from "./binding-store.js";
 import { MACROPAD_SESSION_COLOR_RGB } from "./colors.js";
 import { resolveMacropadConfig, type MacropadConfig } from "./config.js";
-import type { MacropadDeviceStatus, MacropadSlotList } from "./contract-types.js";
 import { BufferedFeatureEmitter, MacropadService, normalizeSessionRows } from "./service.js";
 import type { SessionRowLike } from "./session-status.js";
 import { FakeTransport } from "./transport.js";
