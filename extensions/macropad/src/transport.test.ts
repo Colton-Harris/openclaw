@@ -107,4 +107,34 @@ describe("FakeTransport", () => {
 
     await expect(transport.identify()).rejects.toThrow(/not connected/u);
   });
+
+  it("reports battery through a device.status round-trip", async () => {
+    const transport = new FakeTransport();
+    await transport.connect();
+
+    await expect(transport.status?.()).resolves.toMatchObject({
+      batteryPercent: 100,
+      charging: false,
+    });
+    expect(transport.statusCount).toBe(1);
+  });
+
+  it("reflects a battery that moved between round-trips", async () => {
+    const transport = new FakeTransport();
+    await transport.connect();
+
+    transport.setIdentity({ batteryPercent: 42, charging: true });
+
+    await expect(transport.status?.()).resolves.toMatchObject({
+      batteryPercent: 42,
+      charging: true,
+    });
+  });
+
+  it("can model a driver that implements only connect", async () => {
+    const transport = new FakeTransport({ omitStatus: true });
+    await transport.connect();
+
+    expect(transport.status).toBeUndefined();
+  });
 });

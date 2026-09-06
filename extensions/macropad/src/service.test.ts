@@ -498,3 +498,28 @@ describe("normalizeSessionRows", () => {
     expect(normalizeSessionRows({ sessions: "nope" })).toBeUndefined();
   });
 });
+
+describe("device status refresh", () => {
+  it("surfaces a live battery reading through the service", async () => {
+    const harness = createHarness();
+    await harness.service.start();
+    await harness.advance();
+
+    harness.transport.setIdentity({ batteryPercent: 55, charging: true });
+
+    await expect(harness.service.refreshDeviceStatus()).resolves.toMatchObject({
+      connected: true,
+      batteryPercent: 55,
+      charging: true,
+    });
+  });
+
+  it("reports disconnected without a device rather than throwing", async () => {
+    const harness = createHarness({ noDevice: true });
+    await harness.service.start();
+
+    await expect(harness.service.refreshDeviceStatus()).resolves.toMatchObject({
+      connected: false,
+    });
+  });
+});

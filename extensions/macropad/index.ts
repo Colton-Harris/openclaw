@@ -125,7 +125,7 @@ export default defineFeaturePlugin({
     }
 
     return {
-      "device.get": () => service?.deviceStatus ?? DISCONNECTED,
+      "device.get": async () => (await service?.refreshDeviceStatus()) ?? DISCONNECTED,
       "slots.list": () => service?.listSlots() ?? EMPTY_SLOTS,
       "slots.bind": async (input) => {
         if (!service) {

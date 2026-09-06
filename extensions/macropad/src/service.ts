@@ -159,6 +159,17 @@ export class MacropadService {
   }
 
   /**
+   * Read device status, refreshing the values that move while connected.
+   *
+   * `device.status` is one round-trip and returns firmware plus battery
+   * together, so a live read costs the same as a cached one and cannot show a
+   * stale battery.
+   */
+  refreshDeviceStatus(): Promise<MacropadDeviceStatus> {
+    return this.link.refreshStatus();
+  }
+
+  /**
    * Restore bindings, seed activity from session rows, then open the device.
    *
    * Every step is independently failure-tolerant: a broken store or an

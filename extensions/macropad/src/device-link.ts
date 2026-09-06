@@ -17,7 +17,12 @@
  */
 import type { MacropadDeviceStatus } from "../contract.js";
 import { assertFullFrame, framesEqual, type MacropadFullFrame } from "./frame-compositor.js";
-import type { DeviceInputEvent, DeviceTransport, DeviceTransportFactory } from "./transport.js";
+import type {
+  DeviceIdentity,
+  DeviceInputEvent,
+  DeviceTransport,
+  DeviceTransportFactory,
+} from "./transport.js";
 
 const DEFAULT_RECONNECT_BASE_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_DELAY_MS = 60_000;
@@ -51,6 +56,20 @@ const DISCONNECTED: MacropadDeviceStatus = {
   slotCount: 0,
   inputPermissionRequired: false,
 };
+
+/** Project a proven `device.status` reply onto the contract's status shape. */
+function toConnectedStatus(identity: DeviceIdentity): MacropadDeviceStatus {
+  return {
+    connected: true,
+    slotCount: identity.slotCount,
+    inputPermissionRequired: identity.inputPermissionRequired === true,
+    ...(identity.serial === undefined ? {} : { serial: identity.serial }),
+    ...(identity.firmware === undefined ? {} : { firmware: identity.firmware }),
+    ...(identity.product === undefined ? {} : { product: identity.product }),
+    ...(identity.batteryPercent === undefined ? {} : { batteryPercent: identity.batteryPercent }),
+    ...(identity.charging === undefined ? {} : { charging: identity.charging }),
+  };
+}
 
 export class MacropadDeviceLink {
   private transport: DeviceTransport | undefined;
@@ -133,6 +152,26 @@ export class MacropadDeviceLink {
     }
   }
 
+  /**
+   * Re-read `device.status` for values that move while connected.
+   *
+   * Battery and charging change under the operator's hands, so a cached
+   * connect-time snapshot goes stale within minutes. Transports that do not
+   * implement `status()` keep the connect-time identity rather than losing it.
+   */
+  async refreshStatus(): Promise<MacropadDeviceStatus> {
+    const transport = this.transport;
+    if (!transport?.connected || !transport.status) {
+      return this.currentStatus;
+    }
+    try {
+      this.setStatus(toConnectedStatus(await transport.status()));
+    } catch (error) {
+      this.handleFailure(error);
+    }
+    return this.currentStatus;
+  }
+
   /** Flash every key. Resolves `false` when no device is attached. */
   async identify(): Promise<boolean> {
     const transport = this.transport;
@@ -190,14 +229,7 @@ export class MacropadDeviceLink {
     this.unsubscribeInput = transport.onInput((event) => {
       this.options.onInput?.(event);
     });
-    this.setStatus({
-      connected: true,
-      slotCount: identity.slotCount,
-      inputPermissionRequired: identity.inputPermissionRequired === true,
-      ...(identity.serial === undefined ? {} : { serial: identity.serial }),
-      ...(identity.firmware === undefined ? {} : { firmware: identity.firmware }),
-      ...(identity.product === undefined ? {} : { product: identity.product }),
-    });
+    this.setStatus(toConnectedStatus(identity));
     if (!this.everConnected) {
       this.everConnected = true;
       this.options.logger?.info(
@@ -284,6 +316,8 @@ export class MacropadDeviceLink {
       this.currentStatus.product !== status.product ||
       this.currentStatus.slotCount !== status.slotCount ||
       this.currentStatus.inputPermissionRequired !== status.inputPermissionRequired ||
+      this.currentStatus.batteryPercent !== status.batteryPercent ||
+      this.currentStatus.charging !== status.charging ||
       this.currentStatus.lastError !== status.lastError;
     this.currentStatus = status;
     if (changed) {

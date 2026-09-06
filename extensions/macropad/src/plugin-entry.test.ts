@@ -246,3 +246,22 @@ describe("config", () => {
     });
   });
 });
+
+describe("battery fields", () => {
+  it("omits battery entirely when no device is attached", async () => {
+    // Both fields are optional; `additionalProperties: false` means emitting
+    // them as undefined would fail contract validation.
+    const { services, actions } = register();
+    await services.find((service) => service.id === "macropad-device")?.start(SERVICE_CONTEXT);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const result = await actions.get("device.get")?.handler({ payload: {} });
+
+    expect(result?.ok).toBe(true);
+    expect(Object.keys(result?.result as object).toSorted()).toEqual([
+      "connected",
+      "inputPermissionRequired",
+      "slotCount",
+    ]);
+  });
+});

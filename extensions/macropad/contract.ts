@@ -103,6 +103,9 @@ const DeviceStatus = Type.Object(
     product: Type.Optional(Type.String({ maxLength: 128 })),
     /** Slot count the attached device actually exposes. */
     slotCount: Type.Integer({ minimum: 0, maximum: 64 }),
+    /** Battery percentage, when the device reports one. Verified present on Codex Micro fw v0.4.1. */
+    batteryPercent: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+    charging: Type.Optional(Type.Boolean()),
     /**
      * True when the platform withholds input reports pending user consent
      * (macOS Input Monitoring). Output lighting still works in this state, so

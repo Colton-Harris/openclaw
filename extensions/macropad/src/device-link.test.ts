@@ -390,3 +390,90 @@ describe("teardown", () => {
     expect(received).toHaveLength(1);
   });
 });
+
+describe("battery and live status", () => {
+  it("carries battery from the connect round-trip", async () => {
+    const transport = new FakeTransport();
+    const harness = createLink(() => transport);
+
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(harness.link.status).toMatchObject({ batteryPercent: 100, charging: false });
+  });
+
+  it("re-reads device.status rather than serving a stale battery", async () => {
+    // Battery moves under the operator's hands; a connect-time snapshot is
+    // wrong within minutes.
+    const transport = new FakeTransport();
+    const harness = createLink(() => transport);
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    transport.setIdentity({ batteryPercent: 37, charging: true });
+    const refreshed = await harness.link.refreshStatus();
+
+    expect(refreshed).toMatchObject({ batteryPercent: 37, charging: true });
+    expect(transport.statusCount).toBe(1);
+  });
+
+  it("publishes a status change when only the battery moved", async () => {
+    const transport = new FakeTransport();
+    const harness = createLink(() => transport);
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = harness.statuses.length;
+
+    transport.setIdentity({ batteryPercent: 12 });
+    await harness.link.refreshStatus();
+
+    expect(harness.statuses).toHaveLength(before + 1);
+    expect(harness.statuses.at(-1)?.batteryPercent).toBe(12);
+  });
+
+  it("does not re-notify when the battery has not moved", async () => {
+    const transport = new FakeTransport();
+    const harness = createLink(() => transport);
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = harness.statuses.length;
+
+    await harness.link.refreshStatus();
+
+    expect(harness.statuses).toHaveLength(before);
+  });
+
+  it("keeps the connect-time identity when the driver has no status round-trip", async () => {
+    // The koffi driver may land implementing only connect(); that must not
+    // erase the firmware and battery it already proved.
+    const transport = new FakeTransport({ omitStatus: true });
+    const harness = createLink(() => transport);
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const refreshed = await harness.link.refreshStatus();
+
+    expect(refreshed).toMatchObject({ connected: true, batteryPercent: 100 });
+  });
+
+  it("returns a disconnected status without a device", async () => {
+    const harness = createLink(() => undefined);
+    harness.link.start();
+
+    await expect(harness.link.refreshStatus()).resolves.toMatchObject({ connected: false });
+  });
+
+  it("treats a failed status round-trip as a device failure and reconnects", async () => {
+    const transport = new FakeTransport({ failStatus: true });
+    const harness = createLink(() => transport, { reconnectBaseMs: 1_000 });
+    harness.link.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const result = await harness.link.refreshStatus();
+
+    expect(result.connected).toBe(false);
+    expect(result.lastError).toMatch(/status round-trip failed/u);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(transport.connectCount).toBe(2);
+  });
+});

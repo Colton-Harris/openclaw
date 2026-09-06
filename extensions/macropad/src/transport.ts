@@ -18,13 +18,22 @@
  */
 import type { MacropadFullFrame } from "./frame-compositor.js";
 
-/** Identity proven by a `device.status` round-trip, not by enumeration. */
+/**
+ * Identity proven by a `device.status` round-trip, not by enumeration.
+ *
+ * `device.status` is the correct health call: it returns the firmware version
+ * and the battery in one reply, so `connect()` needs exactly one round-trip to
+ * prove the device is real and to learn everything the UI shows.
+ */
 export type DeviceIdentity = {
   serial?: string;
   firmware?: string;
   product?: string;
   /** Slots the attached device actually lights. May be fewer than `MACROPAD_SLOT_COUNT`. */
   slotCount: number;
+  /** Percentage, when the device reports one. */
+  batteryPercent?: number;
+  charging?: boolean;
   /**
    * True when the OS withholds input reports pending user consent (macOS Input
    * Monitoring). Output lighting still works, so this is a capability flag, not
@@ -51,8 +60,16 @@ export type DeviceRadialEvent = {
 export type DeviceInputEvent = DeviceKeyEvent | DeviceRadialEvent;
 
 export type DeviceTransport = {
-  /** Resolves only after a verified round-trip. Rejects when no device answers. */
+  /** Resolves only after a verified `device.status` round-trip. Rejects when no device answers. */
   connect(): Promise<DeviceIdentity>;
+  /**
+   * Re-read `device.status` for values that move while connected - battery,
+   * charging.
+   *
+   * Optional so a driver that only implements `connect()` still satisfies the
+   * seam; callers fall back to the identity `connect()` returned.
+   */
+  status?(): Promise<DeviceIdentity>;
   /** Writes a FULL frame - every slot, every call. Partial writes blank the rest. */
   setFrame(frame: MacropadFullFrame): Promise<void>;
   /** Briefly flash every key so an operator can tell which device this is. */
@@ -83,6 +100,10 @@ export type FakeTransportOptions = {
   connectFailures?: readonly boolean[];
   /** Reject every `setFrame` - models a device unplugged mid-write. */
   failWrites?: boolean;
+  /** Reject every `status()` round-trip. */
+  failStatus?: boolean;
+  /** Omit `status()` entirely, modelling a driver that only implements connect. */
+  omitStatus?: boolean;
 };
 
 const DEFAULT_IDENTITY: DeviceIdentity = {
@@ -90,6 +111,8 @@ const DEFAULT_IDENTITY: DeviceIdentity = {
   firmware: "0.6.0",
   product: "Fake Macropad",
   slotCount: 6,
+  batteryPercent: 100,
+  charging: false,
 };
 
 /**
@@ -105,13 +128,20 @@ export class FakeTransport implements DeviceTransport {
   connectCount = 0;
   identifyCount = 0;
   closeCount = 0;
+  statusCount = 0;
 
   private open = false;
+  private identity: DeviceIdentity;
   private readonly listeners = new Set<(event: DeviceInputEvent) => void>();
   private readonly connectFailures: boolean[];
 
   constructor(private readonly options: FakeTransportOptions = {}) {
     this.connectFailures = [...(options.connectFailures ?? [])];
+    this.identity = options.identity ?? DEFAULT_IDENTITY;
+    if (options.omitStatus === true) {
+      // Model a driver that implements only `connect()`.
+      this.status = undefined;
+    }
   }
 
   get connected(): boolean {
@@ -129,7 +159,18 @@ export class FakeTransport implements DeviceTransport {
       return Promise.reject(new Error("fake transport: no device found"));
     }
     this.open = true;
-    return Promise.resolve(this.options.identity ?? DEFAULT_IDENTITY);
+    return Promise.resolve(this.identity);
+  }
+
+  status?(): Promise<DeviceIdentity> {
+    this.statusCount++;
+    if (this.options.failStatus === true) {
+      return Promise.reject(new Error("fake transport: status round-trip failed"));
+    }
+    if (!this.open) {
+      return Promise.reject(new Error("fake transport: not connected"));
+    }
+    return Promise.resolve(this.identity);
   }
 
   setFrame(frame: MacropadFullFrame): Promise<void> {
@@ -176,5 +217,10 @@ export class FakeTransport implements DeviceTransport {
   /** Test hook: model the device vanishing without a clean close. */
   drop(): void {
     this.open = false;
+  }
+
+  /** Test hook: change what the next `device.status` round-trip reports. */
+  setIdentity(patch: Partial<DeviceIdentity>): void {
+    this.identity = { ...this.identity, ...patch };
   }
 }
