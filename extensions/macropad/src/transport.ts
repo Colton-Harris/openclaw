@@ -82,6 +82,15 @@ export type DeviceTransport = {
  */
 export type DeviceTransportFactory = (params: {
   deviceSerial?: string;
+  /**
+   * Default-ON sink for input the driver could not turn into an event.
+   *
+   * Deliberately NOT the `debug` trace sink. A line the device sent and the
+   * driver dropped is the one failure that is invisible from the outside - the
+   * LEDs keep working while every key press disappears - so it warns rather
+   * than tracing. Cost a full day once; it does not get to be quiet again.
+   */
+  warn?: (message: string) => void;
 }) => DeviceTransport | undefined;
 
 export type FakeTransportOptions = {

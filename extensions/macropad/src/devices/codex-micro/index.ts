@@ -60,10 +60,15 @@ class CodexMicroDeviceTransport implements DeviceTransport {
   readonly #listeners = new Set<(event: DeviceInputEvent) => void>();
   #open = false;
 
-  constructor(options: { serialNumber?: string; debug?: (message: string) => void }) {
+  constructor(options: {
+    serialNumber?: string;
+    debug?: (message: string) => void;
+    warn?: (message: string) => void;
+  }) {
     this.#rpc = new CodexMicroTransport({
       ...(options.serialNumber === undefined ? {} : { serialNumber: options.serialNumber }),
       ...(options.debug === undefined ? {} : { debug: options.debug }),
+      ...(options.warn === undefined ? {} : { warn: options.warn }),
       events: {
         key: (event: KeyEvent) => {
           if (typeof event?.k !== "number" || typeof event?.act !== "number") {
@@ -219,6 +224,8 @@ export function createCodexMicroTransport(params: {
    * parsed replies without reaching around the driver into the raw RPC layer.
    */
   debug?: (message: string) => void;
+  /** Default-on sink for input the driver could not parse. See `DeviceTransportFactory`. */
+  warn?: (message: string) => void;
 }): DeviceTransport | undefined {
   if (isVitestRuntimeEnv()) {
     return undefined;
@@ -242,6 +249,7 @@ export function createCodexMicroTransport(params: {
   return new CodexMicroDeviceTransport({
     ...(params.deviceSerial === undefined ? {} : { serialNumber: params.deviceSerial }),
     ...(params.debug === undefined ? {} : { debug: params.debug }),
+    ...(params.warn === undefined ? {} : { warn: params.warn }),
   });
 }
 

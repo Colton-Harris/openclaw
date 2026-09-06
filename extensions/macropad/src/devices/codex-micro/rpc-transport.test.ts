@@ -12,6 +12,7 @@
  * plug a macropad in.
  */
 import { describe, expect, it } from "vitest";
+import { Channel, encodePackets, REPORT_ID } from "./framing.js";
 import {
   ALLOWED_METHODS,
   CODEX_MICRO_PRODUCT_ID,
@@ -19,6 +20,7 @@ import {
   CodexMicroTransport,
   ForbiddenMethodError,
   parseDeviceStatus,
+  type RadialEvent,
 } from "./rpc-transport.js";
 
 /**
@@ -119,5 +121,91 @@ describe("parseDeviceStatus", () => {
   it("keeps a zero battery distinguishable from an absent one", () => {
     expect(parseDeviceStatus({ battery: 0 }).battery).toBe(0);
     expect(parseDeviceStatus({}).battery).toBeUndefined();
+  });
+});
+
+/**
+ * Inbound-path tests. NO DEVICE REQUIRED.
+ *
+ * These drive `ingestInputReport` directly with real encoded packets, which is
+ * the same door the HID read callback uses. They exist because the input half
+ * of this driver failed SILENTLY: the parser accepted only the long `method`
+ * spelling, every compact notification became null, and the drop was reported
+ * through a debug sink that is off by default. Nothing turned red.
+ */
+describe("inbound input path", () => {
+  function packetsFor(line: string): Uint8Array[] {
+    return encodePackets(`${line}\n`, Channel.Rpc);
+  }
+
+  it("ACCEPTANCE: delivers a radial event from the exact captured device bytes", () => {
+    const radial: RadialEvent[] = [];
+    const notifications: Array<{ method: string; params: unknown }> = [];
+    const transport = new CodexMicroTransport({
+      events: {
+        radial: (event) => radial.push(event),
+        notification: (method, params) => notifications.push({ method, params }),
+      },
+    });
+
+    for (const packet of packetsFor('{"m":"v.oai.rad","p":{"a":0.085069,"d":0.006819}}')) {
+      transport.ingestInputReport(REPORT_ID, packet);
+    }
+
+    expect(radial).toEqual([{ a: 0.085069, d: 0.006819 }]);
+    expect(notifications).toEqual([{ method: "v.oai.rad", params: { a: 0.085069, d: 0.006819 } }]);
+  });
+
+  it("ACCEPTANCE: an unparsable line WARNS rather than vanishing", () => {
+    // The regression that cost a day: this line arrived, was dropped, and said
+    // nothing at a level anyone had switched on.
+    const warnings: string[] = [];
+    const transport = new CodexMicroTransport({ warn: (message) => warnings.push(message) });
+
+    for (const packet of packetsFor("{not json at all")) {
+      transport.ingestInputReport(REPORT_ID, packet);
+    }
+
+    expect(warnings, "a dropped device line must reach the default-on sink").toHaveLength(1);
+    expect(warnings[0]).toContain("dropped unparsable device line");
+    expect(warnings[0]).toContain("{not json at all");
+  });
+
+  it("warns WITHOUT a debug sink attached - the drop is not debug-gated", () => {
+    const warnings: string[] = [];
+    // No `debug` option at all: this is the production shape before anyone
+    // turns tracing on, and it must still surface the drop.
+    const transport = new CodexMicroTransport({ warn: (message) => warnings.push(message) });
+
+    for (const packet of packetsFor('{"unrelated":1}')) {
+      transport.ingestInputReport(REPORT_ID, packet);
+    }
+
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("ignores reports from the other collections sharing this device", () => {
+    const warnings: string[] = [];
+    const transport = new CodexMicroTransport({ warn: (message) => warnings.push(message) });
+
+    for (const packet of packetsFor("{not json at all")) {
+      transport.ingestInputReport(REPORT_ID + 1, packet);
+    }
+
+    // Keyboard/consumer/mouse traffic is not ours to warn about.
+    expect(warnings).toEqual([]);
+  });
+
+  it("still routes a long-form notification", () => {
+    const radial: RadialEvent[] = [];
+    const transport = new CodexMicroTransport({
+      events: { radial: (event) => radial.push(event) },
+    });
+
+    for (const packet of packetsFor('{"method":"v.oai.rad","params":{"a":1.5,"d":0.25}}')) {
+      transport.ingestInputReport(REPORT_ID, packet);
+    }
+
+    expect(radial).toEqual([{ a: 1.5, d: 0.25 }]);
   });
 });

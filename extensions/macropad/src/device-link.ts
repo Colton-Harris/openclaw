@@ -156,9 +156,12 @@ export class MacropadDeviceLink {
       return;
     }
     const serial = this.options.deviceSerial;
-    const transport = this.options.createTransport(
-      serial === undefined ? {} : { deviceSerial: serial },
-    );
+    const logger = this.options.logger;
+    const transport = this.options.createTransport({
+      ...(serial === undefined ? {} : { deviceSerial: serial }),
+      // Driver-level drops reach the plugin's real logger, not a debug flag.
+      ...(logger === undefined ? {} : { warn: (message: string) => logger.warn(message) }),
+    });
     if (!transport) {
       // No driver on this platform. Not a failure, and not worth retrying:
       // stay inert and silent until something restarts the service.

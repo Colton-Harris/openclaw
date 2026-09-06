@@ -315,8 +315,20 @@ export function parseRpcMessage(text: string): RpcMessage | null {
     };
   }
 
+  // NOTIFICATIONS ARRIVE IN COMPACT FORM. Verified against a live capture: the
+  // device sends `{"m":"v.oai.rad","p":{"a":0.085069,"d":0.006819}}` unprompted.
+  // Responses use the long `method`/`params` spelling, notifications use `m`/`p`,
+  // and the vendor's own SDK reads `method || m`. Accepting only the long form
+  // silently discards EVERY input event the device ever sends.
+  //
+  // Each spelling carries its OWN params key, so this is two branches rather
+  // than a `method || m` / `params ?? p` chain: the long form must keep
+  // reporting its literal `params`, including an explicit null.
   if (typeof rec.method === "string") {
     return { kind: "notification", method: rec.method, params: rec.params };
+  }
+  if (typeof rec.m === "string") {
+    return { kind: "notification", method: rec.m, params: rec.p };
   }
 
   return null;

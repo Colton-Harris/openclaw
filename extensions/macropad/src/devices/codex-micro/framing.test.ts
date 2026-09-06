@@ -286,6 +286,44 @@ describe("JSON-RPC envelope", () => {
     expect((reply as { result: unknown }).result).toEqual({ version: "v0.4.1" });
   });
 
+  it("ACCEPTANCE: parses the COMPACT notification form the device actually sends", () => {
+    // These are real captured bytes. The device emitted this unprompted during a
+    // passive listening window while nothing had requested anything. Responses
+    // use `method`/`params`; notifications use `m`/`p`. A parser that accepts
+    // only the long spelling returns null here and throws away EVERY input
+    // event the hardware produces, which reads exactly like a dead input path.
+    const captured = '{"m":"v.oai.rad","p":{"a":0.085069,"d":0.006819}}';
+    const parsed = parseRpcMessage(captured);
+
+    expect(parsed, "captured dial bytes must not parse to null").not.toBeNull();
+    expect(parsed?.kind).toBe("notification");
+    expect((parsed as { method: string }).method).toBe("v.oai.rad");
+    expect((parsed as { params: unknown }).params).toEqual({ a: 0.085069, d: 0.006819 });
+  });
+
+  it("still parses the LONG response form byte-for-byte after compact support", () => {
+    // The compact fix must not disturb the response path: `id` stays the
+    // discriminator even when the reply echoes its method back.
+    const reply = parseRpcMessage('{"result":{"version":"v0.4.1"},"id":1,"method":"sys.version"}');
+    expect(reply?.kind).toBe("response");
+    expect((reply as { id: number }).id).toBe(1);
+    expect((reply as { result: unknown }).result).toEqual({ version: "v0.4.1" });
+
+    // ...and a long-form NOTIFICATION keeps reading its own `params` key rather
+    // than falling through to the compact `p`.
+    const longNotification = parseRpcMessage('{"method":"v.oai.rad","params":{"a":1,"d":2}}');
+    expect(longNotification?.kind).toBe("notification");
+    expect((longNotification as { params: unknown }).params).toEqual({ a: 1, d: 2 });
+  });
+
+  it("prefers the long spelling when a line somehow carries both", () => {
+    const parsed = parseRpcMessage(
+      '{"method":"long.form","params":{"x":1},"m":"short","p":{"y":2}}',
+    );
+    expect((parsed as { method: string }).method).toBe("long.form");
+    expect((parsed as { params: unknown }).params).toEqual({ x: 1 });
+  });
+
   it("returns null for log noise instead of throwing", () => {
     expect(parseRpcMessage("I (1234) wl_hid: booting")).toBeNull();
     expect(parseRpcMessage("[]")).toBeNull();

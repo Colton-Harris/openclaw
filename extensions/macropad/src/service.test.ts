@@ -15,6 +15,8 @@ type Harness = {
   transport: FakeTransport;
   devices: MacropadDeviceStatus[];
   slots: MacropadSlotList[];
+  /** Everything the service sent to a default-on logger level. */
+  logs: string[];
   advance: () => Promise<void>;
 };
 
@@ -30,6 +32,7 @@ function createHarness(
   const transport = new FakeTransport();
   const devices: MacropadDeviceStatus[] = [];
   const slots: MacropadSlotList[] = [];
+  const logs: string[] = [];
   let clock = 1_000;
   const store = createMemoryBindingStore(overrides.seed ?? []);
   const service = new MacropadService({
@@ -46,12 +49,20 @@ function createHarness(
     now: () => ++clock,
     reconnectBaseMs: 1_000,
     jitter: () => 0,
+    // `debug` is intentionally omitted: anything these tests assert on must be
+    // visible at a level that is on by default.
+    logger: {
+      info: (message) => logs.push(message),
+      warn: (message) => logs.push(message),
+      error: (message) => logs.push(message),
+    },
   });
   return {
     service,
     transport,
     devices,
     slots,
+    logs,
     advance: async () => {
       await vi.advanceTimersByTimeAsync(0);
     },
@@ -492,5 +503,59 @@ describe("normalizeSessionRows", () => {
     expect(normalizeSessionRows(null)).toBeUndefined();
     expect(normalizeSessionRows({})).toBeUndefined();
     expect(normalizeSessionRows({ sessions: "nope" })).toBeUndefined();
+  });
+});
+
+/**
+ * The service must actually CONSUME the input stream.
+ *
+ * `device-link.ts` has always subscribed to `transport.onInput` and forwarded to
+ * its `onInput` option - but `service.ts` never passed one, so a real event
+ * travelled the whole stack and fell on the floor at the last hop with nothing
+ * logged. These lock the last hop shut.
+ */
+describe("device input", () => {
+  it("ACCEPTANCE: records a radial event at a default-on level", async () => {
+    const harness = createHarness();
+    await harness.service.start();
+    await harness.advance();
+
+    harness.transport.emitInput({ type: "radial", angle: 0.085069, distance: 0.006819 });
+
+    const line = harness.logs.find((entry) => entry.includes("v.oai.rad"));
+    expect(line, "a radial event must be visible without enabling debug").toBeDefined();
+    expect(line).toContain("angle=0.085069");
+    expect(line).toContain("distance=0.006819");
+
+    await harness.service.stop();
+  });
+
+  it("records a key event without binding it to any session action", async () => {
+    const harness = createHarness();
+    await harness.service.start();
+    await harness.advance();
+
+    harness.transport.emitInput({ type: "key", key: "AG00", action: 1 });
+
+    const line = harness.logs.find((entry) => entry.includes("v.oai.hid"));
+    expect(line).toBeDefined();
+    expect(line).toContain("key=AG00");
+    expect(line).toContain("action=1");
+
+    await harness.service.stop();
+  });
+
+  it("tears the subscription down on stop", async () => {
+    const harness = createHarness();
+    await harness.service.start();
+    await harness.advance();
+
+    await harness.service.stop();
+    const afterStop = harness.logs.length;
+
+    // The device keeps talking after teardown; a leaked listener would log.
+    harness.transport.emitInput({ type: "radial", angle: 1, distance: 1 });
+
+    expect(harness.logs).toHaveLength(afterStop);
   });
 });

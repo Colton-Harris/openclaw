@@ -120,6 +120,12 @@ export type CodexMicroTransportOptions = {
   events?: TransportEvents;
   /** Protocol tracing sink. Omitted means silent. */
   debug?: (message: string) => void;
+  /**
+   * Default-ON sink for input this driver received but could not turn into an
+   * event. Separate from `debug` on purpose: a dropped line is a defect, not a
+   * trace, and it must be visible without anyone enabling anything.
+   */
+  warn?: (message: string) => void;
 };
 
 /** Parsed `device.status` reply. Verified live on firmware v0.4.1. */
@@ -132,8 +138,10 @@ export type DeviceStatusReply = {
 };
 
 export class CodexMicroTransport {
-  readonly #opts: Required<Omit<CodexMicroTransportOptions, "serialNumber" | "events" | "debug">> &
-    Pick<CodexMicroTransportOptions, "serialNumber" | "events" | "debug">;
+  readonly #opts: Required<
+    Omit<CodexMicroTransportOptions, "serialNumber" | "events" | "debug" | "warn">
+  > &
+    Pick<CodexMicroTransportOptions, "serialNumber" | "events" | "debug" | "warn">;
 
   #device: HidDevice | null = null;
   #reassembler = new Reassembler();
@@ -150,6 +158,7 @@ export class CodexMicroTransport {
       pumpSliceSeconds: opts.pumpSliceSeconds ?? 0.002,
       events: opts.events,
       debug: opts.debug,
+      warn: opts.warn,
     };
   }
 
@@ -171,6 +180,16 @@ export class CodexMicroTransport {
   }
 
   #log(message: string): void {
+    this.#opts.debug?.(message);
+  }
+
+  /**
+   * Report input this driver threw away.
+   *
+   * Also mirrors to `debug` so a protocol trace stays complete in one stream.
+   */
+  #warnDropped(message: string): void {
+    this.#opts.warn?.(message);
     this.#opts.debug?.(message);
   }
 
@@ -203,7 +222,7 @@ export class CodexMicroTransport {
     const device = new HidDevice(info);
     device.open(); // non-exclusive; never seize
     device.startReading((reportId, data) => {
-      this.#onInputReport(reportId, data);
+      this.ingestInputReport(reportId, data);
     });
     this.#device = device;
     this.#reassembler.reset();
@@ -260,7 +279,15 @@ export class CodexMicroTransport {
     }
   }
 
-  #onInputReport(reportId: number, data: Uint8Array): void {
+  /**
+   * The driver's inbound entry point: one raw HID input report from the device.
+   *
+   * Public because it is the ONLY door input comes through, which makes the
+   * whole receive path - reassembly, parse, dispatch, and the drop warning -
+   * provable without hardware attached. Normally called by the read callback
+   * installed in `open()`.
+   */
+  ingestInputReport(reportId: number, data: Uint8Array): void {
     // Other collections (keyboard/consumer/mouse/gamepad) share this device.
     if (reportId !== REPORT_ID) {
       return;
@@ -270,7 +297,7 @@ export class CodexMicroTransport {
     try {
       messages = this.#reassembler.push(data);
     } catch (error) {
-      this.#log(`reassembly error, buffer dropped: ${String(error)}`);
+      this.#warnDropped(`macropad: reassembly error, input buffer dropped: ${String(error)}`);
       return;
     }
 
@@ -286,7 +313,10 @@ export class CodexMicroTransport {
   #dispatch(text: string): void {
     const message = parseRpcMessage(text);
     if (!message) {
-      this.#log(`unparsed line: ${text}`);
+      // Loud by default. This exact branch swallowed every notification the
+      // device sent while the parser only accepted the long `method` spelling,
+      // and because it was debug-gated the input path looked like dead hardware.
+      this.#warnDropped(`macropad: dropped unparsable device line: ${text}`);
       return;
     }
 

@@ -41,7 +41,7 @@ import {
   type SessionActivityState,
   type SessionRowLike,
 } from "./session-status.js";
-import type { DeviceTransportFactory } from "./transport.js";
+import type { DeviceInputEvent, DeviceTransportFactory } from "./transport.js";
 
 export type MacropadEventName = "device_changed" | "slots_changed";
 
@@ -145,6 +145,9 @@ export class MacropadService {
           this.options.emitDeviceChanged(status);
         });
       },
+      onInput: (event) => {
+        this.handleDeviceInput(event);
+      },
       resyncIntervalMs: options.config.resyncIntervalMs,
       ...(options.reconnectBaseMs === undefined
         ? {}
@@ -185,7 +188,31 @@ export class MacropadService {
 
   async stop(): Promise<void> {
     this.started = false;
+    // `link.stop()` runs the transport unsubscribe, so the input subscription
+    // installed on connect is torn down here rather than leaking past stop.
     await this.link.stop();
+  }
+
+  /**
+   * Consume one device input event.
+   *
+   * Records it and stops there ON PURPOSE. Binding a press to a session action
+   * is a separate change: the `v.oai.hid` key payload shape has never actually
+   * been observed on this firmware - a 30-minute passive capture caught four
+   * dial events and zero key events - so anything that branched on a key's
+   * fields today would be branching on a guess. Logging is the honest ceiling
+   * until a real press is captured, and it is what makes that capture possible.
+   */
+  private handleDeviceInput(event: DeviceInputEvent): void {
+    if (event.type === "radial") {
+      this.options.logger?.info(
+        `macropad: device input v.oai.rad angle=${event.angle} distance=${event.distance}`,
+      );
+      return;
+    }
+    this.options.logger?.info(
+      `macropad: device input v.oai.hid key=${event.key} action=${event.action}`,
+    );
   }
 
   /**
