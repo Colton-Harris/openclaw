@@ -290,7 +290,10 @@ extension OpenClawChatViewModel {
         // value forward, so neither may be read as completion.
         self.reconcileGatewayConfirmedActiveRuns(observing: [
             GatewaySessionLivenessObservation(
-                sessionKey: existing.key,
+                identity: self.gatewayRunLivenessIdentity(
+                    forSessionKey: existing.key,
+                    agentID: existing.agentId ?? change.agentId,
+                    listedKey: existing.key),
                 hasActiveRun: snapshot.hasActiveRun),
         ])
         self.persistSessionsToCache(
