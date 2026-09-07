@@ -320,6 +320,8 @@ async function runRecallSubagent(params: {
         agentDir,
         config: params.runtimeConfig,
         prompt,
+        extraSystemPrompt:
+          "This is an internal memory retrieval task, not a user conversation. Do not send acknowledgments, progress updates, or tool-call preambles. Use the available memory tools directly when retrieval is needed. Your final answer is consumed privately by another model; return only the requested memory summary or NONE.",
         provider: modelRef.provider,
         model: modelRef.model,
         lane: ACTIVE_MEMORY_RECALL_LANE,

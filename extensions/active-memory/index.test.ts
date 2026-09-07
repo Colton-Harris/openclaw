@@ -2394,6 +2394,21 @@ describe("active-memory plugin", () => {
     );
   });
 
+  it("gives the internal recall runner a non-user-facing developer role", async () => {
+    await runPromptBuild({ prompt: "What is my favorite food? internal-role-check" });
+
+    const runParams = lastEmbeddedRunParams();
+    expect(runParams.extraSystemPrompt).toContain("internal memory retrieval task");
+    expect(runParams.extraSystemPrompt).toContain(
+      "Do not send acknowledgments, progress updates, or tool-call preambles",
+    );
+    expect(runParams.extraSystemPrompt).toContain(
+      "final answer is consumed privately by another model",
+    );
+    expect(runParams.disableMessageTool).toBe(true);
+    expect(runParams.toolsAllow).toEqual(["memory_search", "memory_get"]);
+  });
+
   it("keeps thinking off and fast mode inherited by default but allows explicit overrides", async () => {
     await runPromptBuild({
       prompt: "What is my favorite food? default-thinking-check",
