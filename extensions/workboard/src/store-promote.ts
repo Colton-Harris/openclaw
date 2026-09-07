@@ -66,6 +66,9 @@ export class WorkboardPromoteStore extends WorkboardEnrichmentStore {
         id,
         {
           status: "ready",
+          // A forced promotion is the explicit schedule override; consume it
+          // in the same CAS write so claim and dispatch cannot reapply the hold.
+          scheduledAt: input.force === true ? null : undefined,
           metadata: {
             ...clearDiagnostics(existing.metadata, ["stranded_ready", "blocked_too_long"]),
             comments,

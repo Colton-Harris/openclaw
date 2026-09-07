@@ -2564,6 +2564,41 @@ describe("WorkboardStore", () => {
     }
   });
 
+  it("force-promotes a future scheduled card by consuming its schedule override", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000);
+      const store = new WorkboardStore(createMemoryStore());
+      const card = await store.create({
+        title: "Force promote later",
+        status: "scheduled",
+        scheduledAt: 10_000,
+        tenant: "operator",
+        labels: ["preserve"],
+      });
+
+      await expect(store.promote(card.id, { force: true })).resolves.toMatchObject({
+        status: "ready",
+        metadata: {
+          automation: { tenant: "operator" },
+        },
+      });
+      const promoted = await store.get(card.id);
+      expect(promoted).toMatchObject({ status: "ready", labels: ["preserve"] });
+      expect(promoted?.metadata?.automation?.scheduledAt).toBeUndefined();
+      expect((await store.dispatch(1_000)).promoted).not.toContainEqual(
+        expect.objectContaining({ id: card.id }),
+      );
+
+      const claimed = await store.claim(card.id, { ownerId: "worker" });
+      expect(claimed.card).toMatchObject({ status: "running" });
+      await store.dispatch(1_000);
+      await expect(store.get(card.id)).resolves.toMatchObject({ status: "running" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("holds dependent cards out of runnable statuses until parents finish", async () => {
     const store = new WorkboardStore(createMemoryStore());
     const parent = await store.create({ title: "Parent", status: "running" });
@@ -2639,6 +2674,25 @@ describe("WorkboardStore", () => {
 
     const lateParent = await store.create({ title: "Late parent" });
     await expect(store.linkCards(lateParent.id, child.id)).rejects.toThrow(/active child/);
+  });
+
+  it("keeps explicitly parked backlog cards out of dependency promotion", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const parent = await store.create({ title: "Incomplete parent", status: "running" });
+    const child = await store.create({
+      title: "Parked child",
+      status: "backlog",
+      parents: [parent.id],
+    });
+    const eligible = await store.create({ title: "Explicitly parked", status: "todo" });
+    await store.move(eligible.id, "backlog", eligible.position);
+
+    const dispatch = await store.dispatch(Date.now() + 30 * 60 * 1000);
+
+    await expect(store.get(child.id)).resolves.toMatchObject({ status: "backlog" });
+    await expect(store.get(eligible.id)).resolves.toMatchObject({ status: "backlog" });
+    expect(dispatch.promoted.map((card) => card.id)).not.toContain(child.id);
+    expect(dispatch.promoted.map((card) => card.id)).not.toContain(eligible.id);
   });
 
   it("resolves parent dependency status with targeted lookups instead of a full-corpus scan", async () => {

@@ -1100,8 +1100,8 @@ export class WorkboardCoreStore extends WorkboardStoreRuntime {
   private async dependencyTargetStatus(card: WorkboardCard, now: number): Promise<WorkboardStatus> {
     const scheduledAt = card.metadata?.automation?.scheduledAt;
     const parents = cardParentIds(card);
-    if (card.status === "scheduled" && !scheduledAt) {
-      return "scheduled";
+    if (card.status === "backlog" || (card.status === "scheduled" && !scheduledAt)) {
+      return card.status;
     }
     if (parents.length === 0) {
       if (scheduledAt && scheduledAt > now && isDependencyPromotableStatus(card.status)) {
