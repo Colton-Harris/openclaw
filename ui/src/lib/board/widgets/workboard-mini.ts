@@ -1,14 +1,33 @@
+import { initialState, Task } from "@lit/task";
 import { html, type TemplateResult } from "lit";
 import { pathForRoute } from "../../../app-route-paths.ts";
 import { t } from "../../../i18n/index.ts";
+import { formatUiError } from "../../format-error.ts";
 import { workboardCardBoardId } from "../../workboard/board-filter.ts";
 import { WORKBOARD_STATUSES } from "../../workboard/types.ts";
 import type { BoardWidget } from "../types.ts";
 import type { PluginBoardWidgetRenderer } from "./index.ts";
+import { loadCronReceiptHistory, renderCronReceiptHistory } from "./workboard-cron-receipts.ts";
 import { renderWorkboardReceipts } from "./workboard-receipts.ts";
 import { WorkboardWidgetElement } from "./workboard-widget.ts";
 
 class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
+  private readonly cronHistory = new Task(this, {
+    args: () =>
+      [this.workboardClient, this.active && this.readStringProp("view") === "receipts"] as const,
+    task: async ([client, active]) => {
+      if (!client || !active) {
+        return initialState;
+      }
+      return loadCronReceiptHistory(client);
+    },
+  });
+
+  override disconnectedCallback(): void {
+    void this.cronHistory.run([null, false]);
+    super.disconnectedCallback();
+  }
+
   override render(): TemplateResult {
     if (this.loading && !this.loaded) {
       return html`<p class="workboard-widget__state">${t("workboard.widget.loading")}</p>`;
@@ -32,7 +51,20 @@ class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
       if (!this.loaded) {
         return html`<p class="workboard-widget__state">${t("workboard.widget.loading")}</p>`;
       }
-      return renderWorkboardReceipts(cards, limit);
+      return html`${renderWorkboardReceipts(cards, limit)}
+        <section data-cron-receipts>
+          <h3>${t("workboard.widget.receiptsCronTitle")}</h3>
+          <p>${t("workboard.widget.receiptsCronScope")}</p>
+          ${this.cronHistory.render({
+            initial: () => html`<p>${t("workboard.widget.receiptsCronUnknown")}</p>`,
+            pending: () => html`<p role="status">${t("common.loading")}</p>`,
+            error: (error) => html`<p role="alert">${formatUiError(error)}</p>`,
+            complete: (result) => renderCronReceiptHistory(result, limit),
+          })}
+          <button class="btn btn--sm" type="button" @click=${() => this.cronHistory.run()}>
+            ${t("common.refresh")}
+          </button>
+        </section>`;
     }
     const topCards = cards
       .filter((card) => card.status === "ready" || card.status === "running")

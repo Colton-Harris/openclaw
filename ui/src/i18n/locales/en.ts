@@ -3842,7 +3842,19 @@ export const en: TranslationMap & {
       noActiveCards: "No ready or running cards.",
       receiptsTitle: "Work receipts",
       receiptsScope:
-        "Latest recorded evidence per card, not independently verified completion. Local files are not opened by this view. Failure coverage is incomplete: cron, delivery, unreported runs, and human actions are not included.",
+        "Latest recorded evidence per card, not independently verified completion. Local files are not opened by this view. Failure coverage is incomplete: unreported runs and human actions are not included.",
+      receiptsCronTitle: "Scheduled run and delivery failures",
+      receiptsCronScope:
+        "Gateway-wide visible history, independent of this board filter. Historical records, not a current failure or recovery verdict. Refresh to check again.",
+      receiptsCronInvalid: "Scheduled history returned an invalid page. Refresh to retry.",
+      receiptsCronUnknown: "Scheduled history is unavailable while disconnected or inactive.",
+      receiptsCronCoverage:
+        "Checked the newest {count} recorded runs (up to 50). Missing records remain unknown.",
+      receiptsCronRunFailed: "Run failed",
+      receiptsCronDeliveryFailed: "Delivery failed",
+      receiptsCronEmpty:
+        "No recorded failures in this page. This does not prove all work succeeded.",
+      receiptsCronMore: "Older history is not included in this bounded view.",
       receiptsPassed: "Recorded passes",
       receiptsFailed: "Recorded failures",
       receiptsAttempts: "Failed run history",

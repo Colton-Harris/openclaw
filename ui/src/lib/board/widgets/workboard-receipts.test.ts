@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../../../../test/helpers/promise.js";
 import type { ApplicationContext } from "../../../app/context.ts";
 import { createApplicationContextProvider } from "../../../test-helpers/application-context.ts";
 import type { BoardWidget } from "../types.ts";
@@ -57,15 +58,21 @@ function pluginWidget(pluginKind: string, props: Record<string, unknown>): Board
 }
 
 function createContext(
-  request: ReturnType<typeof vi.fn>,
+  request: ReturnType<typeof vi.fn<(method: string, params: unknown) => Promise<unknown>>>,
   events?: { listener?: Parameters<ApplicationContext["gateway"]["subscribeEvents"]>[0] },
+  includeCron = false,
 ): ApplicationContext {
   const subscribe = () => () => undefined;
   return {
     basePath: "/control",
     gateway: {
       snapshot: {
-        client: { request } as never,
+        client: {
+          request: (method: string, params: unknown) =>
+            method === "cron.runs" && !includeCron
+              ? Promise.resolve({ entries: [] })
+              : request(method, params),
+        } as never,
         phase: "connected",
         hello: null,
         assistantAgentId: null,
@@ -89,7 +96,7 @@ function createContext(
 async function mount<T extends HTMLElement>(
   element: T,
   context: ApplicationContext,
-  request: ReturnType<typeof vi.fn>,
+  request: ReturnType<typeof vi.fn<(method: string, params: unknown) => Promise<unknown>>>,
 ): Promise<T> {
   const provider = createApplicationContextProvider(context);
   provider.append(element);
@@ -297,5 +304,134 @@ describe("Workboard receipt view", () => {
     expect(section?.querySelector("details")?.textContent).toContain("attempt-6");
     expect(section?.textContent).toContain("Showing 5 of 7");
     expect(section?.textContent).not.toContain("ambiguous");
+  });
+});
+
+describe("Scheduled receipt history", () => {
+  it("shares pending history across widgets and releases a failed request for retry", async () => {
+    let page = createDeferred<{ entries: [] }>();
+    const request = vi.fn(async (method: string) =>
+      method === "cron.runs" ? page.promise : { cards: [] },
+    );
+    const context = createContext(request, undefined, true);
+    const widgets: HTMLElementTagNameMap["openclaw-workboard-mini-widget"][] = [];
+    for (const boardId of ["one", "two"]) {
+      const widget = document.createElement("openclaw-workboard-mini-widget");
+      widget.widget = pluginWidget("workboard:mini", { view: "receipts", boardId });
+      await mount(widget, context, request);
+      widgets.push(widget);
+    }
+    expect(request.mock.calls.filter(([method]) => method === "cron.runs")).toHaveLength(1);
+    page.reject(new Error("shared failure"));
+    await vi.waitFor(() => {
+      for (const widget of widgets) {
+        expect(widget.querySelector("[data-cron-receipts] [role=alert]")?.textContent).toContain(
+          "shared failure",
+        );
+      }
+    });
+    page = createDeferred<{ entries: [] }>();
+    for (const widget of widgets) {
+      widget.querySelector<HTMLButtonElement>("[data-cron-receipts] button")!.click();
+    }
+    expect(request.mock.calls.filter(([method]) => method === "cron.runs")).toHaveLength(2);
+    page.resolve({ entries: [] });
+    await vi.waitFor(() => {
+      for (const widget of widgets) {
+        expect(widget.querySelector("[data-cron-receipts] [role=alert]")).toBeNull();
+        expect(widget.querySelector("[data-cron-receipts]")?.textContent).toContain("0");
+      }
+    });
+  });
+
+  it("reports an invalid history page without losing card evidence", async () => {
+    const request = vi.fn(async () => ({ cards: [] }));
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", { view: "receipts" });
+    await mount(element, createContext(request, undefined, true), request);
+    await vi.waitFor(() =>
+      expect(element.querySelector("[data-cron-receipts] [role=alert]")?.textContent).toContain(
+        "invalid page",
+      ),
+    );
+    expect(element.querySelector("[data-test-id=workboard-receipts-widget]")).not.toBeNull();
+  });
+
+  it("shows recorded run and delivery failures, excludes intentional non-delivery, and clears stale rows on a denied refresh", async () => {
+    let denied = false;
+    const request = vi.fn(async (method: string) => {
+      if (method === "workboard.cards.list") {
+        return { cards: [] };
+      }
+      if (denied) {
+        throw new Error("History access denied");
+      }
+      return {
+        entries: [
+          {
+            jobId: "run-failure",
+            ts: 100,
+            action: "finished",
+            status: "error",
+            error: "<script>bad</script>",
+          },
+          {
+            jobId: "delivery-failure",
+            ts: 90,
+            action: "finished",
+            status: "ok",
+            deliveryStatus: "not-delivered",
+            deliveryError: "transport failed",
+          },
+          {
+            jobId: "intentional-quiet",
+            ts: 80,
+            action: "finished",
+            status: "ok",
+            deliveryStatus: "not-delivered",
+          },
+          { jobId: "unreported", ts: 70, action: "finished" },
+          { jobId: "future", ts: Date.now() + 60000, action: "finished", status: "error" },
+        ],
+        hasMore: true,
+      };
+    });
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", { view: "receipts" });
+    await mount(element, createContext(request, undefined, true), request);
+    await vi.waitFor(() =>
+      expect(element.querySelector("[data-cron-receipts]")?.textContent).toContain(
+        "transport failed",
+      ),
+    );
+    expect(request).toHaveBeenCalledWith("cron.runs", {
+      scope: "all",
+      limit: 50,
+      offset: 0,
+      sortDir: "desc",
+    });
+    const pane = element.querySelector("[data-cron-receipts]")!;
+    expect(pane.textContent).toContain("run-failure");
+    expect(pane.textContent).not.toContain("intentional-quiet");
+    expect(pane.textContent).not.toContain("unreported");
+    expect(pane.textContent).not.toContain("future");
+    expect(pane.querySelector("script")).toBeNull();
+    expect(pane.textContent).toContain("Older history");
+    denied = true;
+    pane.querySelector("button")!.click();
+    await vi.waitFor(() =>
+      expect(pane.querySelector("[role=alert]")?.textContent).toContain("History access denied"),
+    );
+    expect(pane.textContent).not.toContain("run-failure");
+    expect(request.mock.calls.filter(([method]) => method === "cron.runs")).toHaveLength(2);
+  });
+
+  it("does not request scheduler history for the default widget", async () => {
+    const request = vi.fn(async () => ({ cards: [] }));
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", {});
+    await mount(element, createContext(request, undefined, true), request);
+    expect(request.mock.calls).toEqual([["workboard.cards.list", {}]]);
+    expect(element.querySelector("[data-cron-receipts]")).toBeNull();
   });
 });
