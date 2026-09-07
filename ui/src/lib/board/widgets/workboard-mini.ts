@@ -29,6 +29,30 @@ class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
   }
 
   override render(): TemplateResult {
+    const board = this.renderBoard();
+    if (this.readStringProp("view") !== "receipts") {
+      return board;
+    }
+    const limit = Math.min(10, this.readPositiveIntegerProp("limit", 5));
+    // Independent sources keep their own pending/error states. A card-list
+    // outage must not hide recorded scheduler failures or their retry control.
+    return html`${board}
+      <section data-cron-receipts>
+        <h3>${t("workboard.widget.receiptsCronTitle")}</h3>
+        <p>${t("workboard.widget.receiptsCronScope")}</p>
+        ${this.cronHistory.render({
+          initial: () => html`<p>${t("workboard.widget.receiptsCronUnknown")}</p>`,
+          pending: () => html`<p role="status">${t("common.loading")}</p>`,
+          error: (error) => html`<p role="alert">${formatUiError(error)}</p>`,
+          complete: (result) => renderCronReceiptHistory(result, limit),
+        })}
+        <button class="btn btn--sm" type="button" @click=${() => this.cronHistory.run()}>
+          ${t("common.refresh")}
+        </button>
+      </section>`;
+  }
+
+  private renderBoard(): TemplateResult {
     if (this.loading && !this.loaded) {
       return html`<p class="workboard-widget__state">${t("workboard.widget.loading")}</p>`;
     }
@@ -51,20 +75,7 @@ class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
       if (!this.loaded) {
         return html`<p class="workboard-widget__state">${t("workboard.widget.loading")}</p>`;
       }
-      return html`${renderWorkboardReceipts(cards, limit)}
-        <section data-cron-receipts>
-          <h3>${t("workboard.widget.receiptsCronTitle")}</h3>
-          <p>${t("workboard.widget.receiptsCronScope")}</p>
-          ${this.cronHistory.render({
-            initial: () => html`<p>${t("workboard.widget.receiptsCronUnknown")}</p>`,
-            pending: () => html`<p role="status">${t("common.loading")}</p>`,
-            error: (error) => html`<p role="alert">${formatUiError(error)}</p>`,
-            complete: (result) => renderCronReceiptHistory(result, limit),
-          })}
-          <button class="btn btn--sm" type="button" @click=${() => this.cronHistory.run()}>
-            ${t("common.refresh")}
-          </button>
-        </section>`;
+      return renderWorkboardReceipts(cards, limit);
     }
     const topCards = cards
       .filter((card) => card.status === "ready" || card.status === "running")

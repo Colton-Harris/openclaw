@@ -308,6 +308,41 @@ describe("Workboard receipt view", () => {
 });
 
 describe("Scheduled receipt history", () => {
+  it("keeps scheduler failures visible while Workboard is pending or failed", async () => {
+    const list = createDeferred<unknown>();
+    const request = vi.fn(async (method: string) =>
+      method === "workboard.cards.list"
+        ? list.promise
+        : {
+            entries: [
+              {
+                jobId: "independent-failure",
+                ts: 100,
+                action: "finished",
+                status: "error",
+                error: "scheduler failed",
+              },
+            ],
+          },
+    );
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", { view: "receipts" });
+    const provider = createApplicationContextProvider(createContext(request, undefined, true));
+    provider.append(element);
+    document.body.append(provider);
+    await vi.waitFor(() =>
+      expect(element.querySelector("[data-cron-receipts]")?.textContent).toContain(
+        "independent-failure",
+      ),
+    );
+    expect(element.textContent).toContain("Loading Workboard");
+    list.reject(new Error("Workboard unavailable"));
+    await vi.waitFor(() => expect(element.textContent).toContain("Workboard unavailable"));
+    expect(element.querySelector("[data-cron-receipts]")?.textContent).toContain(
+      "independent-failure",
+    );
+  });
+
   it("shares pending history across widgets and releases a failed request for retry", async () => {
     let page = createDeferred<{ entries: [] }>();
     const request = vi.fn(async (method: string) =>
