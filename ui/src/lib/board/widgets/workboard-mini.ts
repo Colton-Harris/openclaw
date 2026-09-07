@@ -1,13 +1,18 @@
 import { initialState, Task } from "@lit/task";
-import { html, type TemplateResult } from "lit";
+import { html, type PropertyValues, type TemplateResult } from "lit";
 import { pathForRoute } from "../../../app-route-paths.ts";
 import { t } from "../../../i18n/index.ts";
+import { SubscriptionsController } from "../../../lit/subscriptions-controller.ts";
 import { formatUiError } from "../../format-error.ts";
 import { workboardCardBoardId } from "../../workboard/board-filter.ts";
 import { WORKBOARD_STATUSES } from "../../workboard/types.ts";
 import type { BoardWidget } from "../types.ts";
 import type { PluginBoardWidgetRenderer } from "./index.ts";
-import { loadCronReceiptHistory, renderCronReceiptHistory } from "./workboard-cron-receipts.ts";
+import {
+  loadCronReceiptHistory,
+  renderCronReceiptHistory,
+  subscribeCronReceiptHistory,
+} from "./workboard-cron-receipts.ts";
 import { renderWorkboardReceipts } from "./workboard-receipts.ts";
 import { WorkboardWidgetElement } from "./workboard-widget.ts";
 
@@ -23,7 +28,40 @@ class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
     },
   });
 
+  private readonly cronSubscriptions = new SubscriptionsController(this).effect(
+    () =>
+      this.active && this.readStringProp("view") === "receipts" ? this.context?.gateway : undefined,
+    (gateway) =>
+      subscribeCronReceiptHistory(gateway, () => {
+        if (
+          this.isConnected &&
+          this.active &&
+          this.readStringProp("view") === "receipts" &&
+          this.context?.gateway === gateway &&
+          gateway.snapshot.phase === "connected" &&
+          this.workboardClient === gateway.snapshot.client
+        ) {
+          void this.cronHistory.run();
+        }
+      }),
+  );
+
+  override shouldUpdate(): boolean {
+    if (!this.active) {
+      this.cronSubscriptions.clear();
+    }
+    return super.shouldUpdate();
+  }
+
+  override updated(changed: PropertyValues<this>): void {
+    super.updated(changed);
+    if (changed.get("active") === false && this.active) {
+      void this.cronHistory.run();
+    }
+  }
+
   override disconnectedCallback(): void {
+    this.cronSubscriptions.clear();
     void this.cronHistory.run([null, false]);
     super.disconnectedCallback();
   }

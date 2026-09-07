@@ -1,31 +1,90 @@
 import { html, type TemplateResult } from "lit";
 import type { GatewayBrowserClient } from "../../../api/gateway.ts";
 import type { CronRunsResult } from "../../../api/types.ts";
+import type { ApplicationContext } from "../../../app/context.ts";
 import { t } from "../../../i18n/index.ts";
 
-const pendingHistory = new WeakMap<GatewayBrowserClient, Promise<CronRunsResult>>();
+type PendingHistory = { promise: Promise<CronRunsResult>; invalidate: () => void };
+const pendingHistory = new WeakMap<GatewayBrowserClient, PendingHistory>();
+const subscriptions = new WeakMap<
+  ApplicationContext["gateway"],
+  { listeners: Set<() => void>; unsubscribe: () => void }
+>();
+
+export function subscribeCronReceiptHistory(
+  gateway: ApplicationContext["gateway"],
+  listener: () => void,
+): () => void {
+  let subscription = subscriptions.get(gateway);
+  if (!subscription) {
+    const listeners = new Set<() => void>();
+    const unsubscribe = gateway.subscribeEvents((event) => {
+      const snapshot = gateway.snapshot;
+      if (event.event !== "cron" || snapshot.phase !== "connected" || !snapshot.client) {
+        return;
+      }
+      const pending = pendingHistory.get(snapshot.client);
+      if (pending) {
+        pending.invalidate();
+      }
+      for (const notify of listeners) {
+        notify();
+      }
+    });
+    subscription = { listeners, unsubscribe };
+    subscriptions.set(gateway, subscription);
+  }
+  subscription.listeners.add(listener);
+  return () => {
+    subscription.listeners.delete(listener);
+    if (subscription.listeners.size === 0) {
+      subscription.unsubscribe();
+      subscriptions.delete(gateway);
+    }
+  };
+}
 
 export function loadCronReceiptHistory(client: GatewayBrowserClient): Promise<CronRunsResult> {
   const pending = pendingHistory.get(client);
   if (pending) {
-    return pending;
+    return pending.promise;
   }
-  // Share only the in-flight page for this authenticated connection. Settled
-  // results are never cached, so retry cannot retain a denied or stale page.
-  const load = client
-    .request<CronRunsResult>("cron.runs", {
+  // Every consumer awaits the same post-event page, including events arriving
+  // during a rejected request. Settled pages are never cached across retries.
+  const requestPage = () =>
+    client.request<CronRunsResult>("cron.runs", {
       scope: "all",
       limit: 50,
       offset: 0,
       sortDir: "desc",
-    })
-    .then((result) => {
-      if (!result || !Array.isArray(result.entries)) {
-        throw new Error(t("workboard.widget.receiptsCronInvalid"));
-      }
-      return result;
     });
-  pendingHistory.set(client, load);
+  let invalidated = false;
+  const load = (async () => {
+    let page = requestPage();
+    while (true) {
+      try {
+        const result = await page;
+        if (!result || !Array.isArray(result.entries)) {
+          throw new Error(t("workboard.widget.receiptsCronInvalid"));
+        }
+        if (!invalidated) {
+          return result;
+        }
+      } catch (error) {
+        if (!invalidated) {
+          throw error;
+        }
+      }
+      invalidated = false;
+      page = requestPage();
+    }
+  })();
+  pendingHistory.set(client, {
+    promise: load,
+    invalidate: () => {
+      invalidated = true;
+    },
+  });
   const release = () => pendingHistory.delete(client);
   void load.then(release, release);
   return load;

@@ -63,6 +63,14 @@ function createContext(
   includeCron = false,
 ): ApplicationContext {
   const subscribe = () => () => undefined;
+  const listeners = new Set<Parameters<ApplicationContext["gateway"]["subscribeEvents"]>[0]>();
+  if (events) {
+    events.listener = (event) => {
+      for (const listener of listeners) {
+        listener(event);
+      }
+    };
+  }
   return {
     basePath: "/control",
     gateway: {
@@ -84,10 +92,10 @@ function createContext(
       subscribeEvents: (
         listener: Parameters<ApplicationContext["gateway"]["subscribeEvents"]>[0],
       ) => {
-        if (events) {
-          events.listener = listener;
-        }
-        return () => undefined;
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
       },
     } as unknown as ApplicationContext["gateway"],
   } as unknown as ApplicationContext;
@@ -308,6 +316,120 @@ describe("Workboard receipt view", () => {
 });
 
 describe("Scheduled receipt history", () => {
+  it.each(["success", "failure"])(
+    "refreshes every consumer once after a cron event during pending %s",
+    async (settlement) => {
+      const pending = createDeferred<unknown>();
+      const fresh = {
+        entries: [{ jobId: "post-event-failure", ts: 100, action: "finished", status: "error" }],
+      };
+      let calls = 0;
+      const request = vi.fn(async (method: string) =>
+        method === "cron.runs" ? (++calls === 1 ? pending.promise : fresh) : { cards: [] },
+      );
+      const events: NonNullable<Parameters<typeof createContext>[1]> = {};
+      const context = createContext(request, events, true);
+      const widgets: HTMLElementTagNameMap["openclaw-workboard-mini-widget"][] = [];
+      for (const boardId of ["one", "two"]) {
+        const widget = document.createElement("openclaw-workboard-mini-widget");
+        widget.widget = pluginWidget("workboard:mini", { view: "receipts", boardId });
+        await mount(widget, context, request);
+        widgets.push(widget);
+      }
+      events.listener?.({ type: "event", event: "cron", payload: {} });
+      events.listener?.({ type: "event", event: "cron", payload: {} });
+      expect(calls).toBe(1);
+      if (settlement === "success") {
+        pending.resolve({ entries: [] });
+      } else {
+        pending.reject(new Error("pre-event failure"));
+      }
+      await vi.waitFor(() => {
+        for (const widget of widgets) {
+          expect(widget.querySelector("[data-cron-receipts]")?.textContent).toContain(
+            "post-event-failure",
+          );
+        }
+      });
+      expect(calls).toBe(2);
+      events.listener?.({ type: "event", event: "cron", payload: {} });
+      await vi.waitFor(() => expect(calls).toBe(3));
+    },
+  );
+
+  it("ignores old gateway events and completions and refreshes after reactivation and remount", async () => {
+    const pending = createDeferred<unknown>();
+    const oldRequest = vi.fn(async (method: string) =>
+      method === "cron.runs" ? pending.promise : { cards: [] },
+    );
+    const oldEvents: NonNullable<Parameters<typeof createContext>[1]> = {};
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", { view: "receipts" });
+    const provider = createApplicationContextProvider(createContext(oldRequest, oldEvents, true));
+    provider.append(element);
+    document.body.append(provider);
+    await vi.waitFor(() => expect(oldRequest).toHaveBeenCalledWith("cron.runs", expect.anything()));
+    const events: NonNullable<Parameters<typeof createContext>[1]> = {};
+    const request = vi.fn(async (method: string) =>
+      method === "cron.runs"
+        ? { entries: [{ jobId: "new-connection", ts: 100, action: "finished", status: "error" }] }
+        : { cards: [] },
+    );
+    provider.setContext(createContext(request, events, true));
+    await vi.waitFor(() => expect(element.textContent).toContain("new-connection"));
+    const count = () => request.mock.calls.filter(([method]) => method === "cron.runs").length;
+    expect(count()).toBe(1);
+    oldEvents.listener?.({ type: "event", event: "cron", payload: {} });
+    pending.resolve({
+      entries: [{ jobId: "old-connection", ts: 100, action: "finished", status: "error" }],
+    });
+    await element.updateComplete;
+    expect(element.textContent).not.toContain("old-connection");
+    expect(count()).toBe(1);
+    element.active = false;
+    await element.updateComplete;
+    events.listener?.({ type: "event", event: "cron", payload: {} });
+    expect(count()).toBe(1);
+    element.active = true;
+    await element.updateComplete;
+    await vi.waitFor(() => expect(count()).toBe(2));
+    await element.updateComplete;
+    await vi.waitFor(() =>
+      expect(element.querySelector("[data-cron-receipts]")?.textContent).toContain(
+        "new-connection",
+      ),
+    );
+    element.remove();
+    events.listener?.({ type: "event", event: "cron", payload: {} });
+    expect(count()).toBe(2);
+    provider.append(element);
+    await vi.waitFor(() => expect(count()).toBe(3));
+    events.listener?.({ type: "event", event: "cron", payload: {} });
+    await vi.waitFor(() => expect(count()).toBe(4));
+  });
+
+  it("does not refresh a hidden consumer when a cron event arrives during its pending request", async () => {
+    const pending = createDeferred<unknown>();
+    let calls = 0;
+    const request = vi.fn(async (method: string) =>
+      method === "cron.runs" ? (++calls === 1 ? pending.promise : { entries: [] }) : { cards: [] },
+    );
+    const events: NonNullable<Parameters<typeof createContext>[1]> = {};
+    const element = document.createElement("openclaw-workboard-mini-widget");
+    element.widget = pluginWidget("workboard:mini", { view: "receipts" });
+    await mount(element, createContext(request, events, true), request);
+    element.active = false;
+    await element.updateComplete;
+    events.listener?.({ type: "event", event: "cron", payload: {} });
+    pending.resolve({ entries: [] });
+    await pending.promise;
+    await element.updateComplete;
+    expect(calls).toBe(1);
+    element.active = true;
+    await element.updateComplete;
+    await vi.waitFor(() => expect(calls).toBe(2));
+  });
+
   it("keeps scheduler failures visible while Workboard is pending or failed", async () => {
     const list = createDeferred<unknown>();
     const request = vi.fn(async (method: string) =>
