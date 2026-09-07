@@ -16,7 +16,7 @@ import type {
   OpenClawPluginServiceContext,
 } from "openclaw/plugin-sdk/plugin-entry";
 import { macropadContract } from "./contract.js";
-import { createKeyedBindingStore, type OpenKeyedStoreLike } from "./src/binding-store.js";
+import { createKeyedBindingStore } from "./src/binding-store.js";
 import { resolveMacropadConfig } from "./src/config.js";
 import type { MacropadDeviceStatus, MacropadSlotList } from "./src/contract-types.js";
 import { createCodexMicroTransport } from "./src/devices/codex-micro/index.js";
@@ -85,10 +85,7 @@ export default defineFeaturePlugin({
             const next = new MacropadService({
               config,
               createTransport: createDeviceTransport,
-              openBindingStore: () =>
-                createKeyedBindingStore(
-                  api.runtime.state.openKeyedStore as unknown as OpenKeyedStoreLike,
-                ),
+              openBindingStore: () => createKeyedBindingStore(api.runtime.state.openKeyedStore),
               listSessions: async () => {
                 if (!(await api.runtime.gateway.isAvailable())) {
                   return undefined;

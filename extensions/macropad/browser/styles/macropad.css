@@ -6,7 +6,7 @@
   gap: 16px;
   overflow-y: auto;
   padding-bottom: 16px;
-  --macropad-key-size: 92px;
+  --macropad-key-size: 180px;
   --macropad-control-bg: color-mix(in srgb, var(--bg-elevated) 72%, var(--bg) 28%);
   --macropad-control-border: color-mix(in srgb, var(--border-strong) 78%, transparent);
 }
@@ -139,7 +139,7 @@
 /* The six-key mirror. */
 .macropad-keys {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--macropad-key-size), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--macropad-key-size)), 1fr));
   gap: 10px;
 }
 

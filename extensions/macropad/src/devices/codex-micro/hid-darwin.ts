@@ -41,24 +41,10 @@ export const kIOHIDOptionsTypeSeize = 1;
 const kCFStringEncodingUTF8 = 0x08_00_01_00;
 const kCFNumberSInt32Type = 3;
 
-/** koffi's dynamic surface is untyped by design; this names it once. */
-type KoffiApi = {
-  load: (path: string) => { func: (...args: unknown[]) => (...call: never[]) => never };
-  proto: (signature: string) => unknown;
-  pointer: (type: unknown) => unknown;
-  out: (type: unknown) => unknown;
-  alloc: (type: string, count: number) => unknown;
-  decode: (...args: unknown[]) => unknown;
-  sizeof: (type: string) => number;
-  register: (callback: (...args: never[]) => void, type: unknown) => unknown;
-  unregister: (handle: unknown) => void;
-  version: string;
-};
-
 type Bindings = ReturnType<typeof loadBindings>;
 
 function loadBindings() {
-  const api = koffi as unknown as KoffiApi;
+  const api = koffi;
   const iokit = api.load("/System/Library/Frameworks/IOKit.framework/IOKit");
   const cf = api.load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation");
 
@@ -190,7 +176,7 @@ export function isDarwinHidAvailable(): boolean {
 
 /** koffi's own version string. Useful in diagnostics; empty when unavailable. */
 export function koffiVersion(): string {
-  return (koffi as unknown as KoffiApi).version ?? "";
+  return koffi.version ?? "";
 }
 
 const cfStringCache = new Map<string, unknown>();
@@ -199,11 +185,7 @@ const cfStringCache = new Map<string, unknown>();
 function cfstr(value: string): unknown {
   let ref = cfStringCache.get(value);
   if (ref === undefined) {
-    ref = bindings().CFStringCreateWithCString(
-      null as never,
-      value as never,
-      kCFStringEncodingUTF8 as never,
-    );
+    ref = bindings().CFStringCreateWithCString(null, value, kCFStringEncodingUTF8);
     cfStringCache.set(value, ref);
   }
   return ref;
@@ -219,31 +201,24 @@ function defaultRunLoopMode(): unknown {
 }
 
 function numberProperty(device: unknown, key: string): number | null {
-  const ref = bindings().IOHIDDeviceGetProperty(device as never, cfstr(key) as never);
+  const ref = bindings().IOHIDDeviceGetProperty(device, cfstr(key));
   if (!ref) {
     return null;
   }
   const out = Buffer.alloc(4);
-  if (!bindings().CFNumberGetValue(ref as never, kCFNumberSInt32Type as never, out as never)) {
+  if (!bindings().CFNumberGetValue(ref, kCFNumberSInt32Type, out)) {
     return null;
   }
   return out.readInt32LE(0);
 }
 
 function stringProperty(device: unknown, key: string): string | null {
-  const ref = bindings().IOHIDDeviceGetProperty(device as never, cfstr(key) as never);
+  const ref = bindings().IOHIDDeviceGetProperty(device, cfstr(key));
   if (!ref) {
     return null;
   }
   const buf = Buffer.alloc(512);
-  if (
-    !bindings().CFStringGetCString(
-      ref as never,
-      buf as never,
-      buf.length as never,
-      kCFStringEncodingUTF8 as never,
-    )
-  ) {
+  if (!bindings().CFStringGetCString(ref, buf, buf.length, kCFStringEncodingUTF8)) {
     return null;
   }
   const end = buf.indexOf(0);
@@ -272,17 +247,17 @@ let sharedManager: unknown = null;
 function manager(): unknown {
   if (sharedManager === null) {
     const bound = bindings();
-    sharedManager = bound.IOHIDManagerCreate(null as never, kIOHIDOptionsTypeNone as never);
+    sharedManager = bound.IOHIDManagerCreate(null, kIOHIDOptionsTypeNone);
     if (!sharedManager) {
       throw new Error("IOHIDManagerCreate returned NULL");
     }
     // NULL matching dictionary == match everything; we filter in JS. This avoids
     // hand-building a CFDictionary over FFI for no benefit.
-    bound.IOHIDManagerSetDeviceMatching(sharedManager as never, null as never);
-    const result = bound.IOHIDManagerOpen(sharedManager as never, kIOHIDOptionsTypeNone as never);
-    if ((result as unknown as number) !== kIOReturnSuccess) {
+    bound.IOHIDManagerSetDeviceMatching(sharedManager, null);
+    const result = bound.IOHIDManagerOpen(sharedManager, kIOHIDOptionsTypeNone);
+    if (result !== kIOReturnSuccess) {
       sharedManager = null;
-      throw new Error(`IOHIDManagerOpen failed: ${ioReturnHex(result as unknown as number)}`);
+      throw new Error(`IOHIDManagerOpen failed: ${ioReturnHex(result)}`);
     }
   }
   return sharedManager;
@@ -291,20 +266,21 @@ function manager(): unknown {
 /** Every HID device the manager can see, with the properties we care about. */
 export function enumerateDevices(): HidDeviceInfo[] {
   const bound = bindings();
-  const set = bound.IOHIDManagerCopyDevices(manager() as never);
+  const set = bound.IOHIDManagerCopyDevices(manager());
   if (!set) {
     return [];
   }
 
+  let values: unknown = null;
   try {
-    const count = Number(bound.CFSetGetCount(set as never));
+    const count = Number(bound.CFSetGetCount(set));
     if (count <= 0) {
       return [];
     }
 
     // CFSetGetValues fills an array of `count` pointers.
-    const values = bound.api.alloc("void *", count);
-    bound.CFSetGetValues(set as never, values as never);
+    values = bound.api.alloc("void *", count);
+    bound.CFSetGetValues(set, values);
 
     const out: HidDeviceInfo[] = [];
     for (let i = 0; i < count; i++) {
@@ -326,7 +302,10 @@ export function enumerateDevices(): HidDeviceInfo[] {
     }
     return out;
   } finally {
-    bound.CFRelease(set as never);
+    if (values !== null) {
+      bound.api.free(values);
+    }
+    bound.CFRelease(set);
   }
 }
 
@@ -397,10 +376,10 @@ export class HidDevice {
   // IOKit writes into #inputBuffer from the kernel and calls #callbackPtr.
   // If GC collected either, we would crash or silently stop receiving.
   #inputBuffer: unknown = null;
-  #callbackPtr: unknown = null;
+  #callbackPtr: bigint | null = null;
   #handler: InputReportHandler | null = null;
 
-  /** Reports actually delivered to our callback. Compare against kernel InputReportCount. */
+  /** Reports actually delivered to our callback; not an inferred kernel traffic counter. */
   inputReportCount = 0;
   /** Successful `IOHIDDeviceSetReport` calls. NOT proof of delivery - see `setOutputReport`. */
   setReportCount = 0;
@@ -421,10 +400,7 @@ export class HidDevice {
     if (this.#open) {
       return;
     }
-    const result = bindings().IOHIDDeviceOpen(
-      this.info.handle as never,
-      kIOHIDOptionsTypeNone as never,
-    ) as unknown as number;
+    const result = bindings().IOHIDDeviceOpen(this.info.handle, kIOHIDOptionsTypeNone);
     if (result !== kIOReturnSuccess) {
       throw new HidError("IOHIDDeviceOpen failed", result);
     }
@@ -452,12 +428,12 @@ export class HidDevice {
     const buf = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
 
     const result = bindings().IOHIDDeviceSetReport(
-      this.info.handle as never,
-      kIOHIDReportTypeOutput as never,
-      reportId as never,
-      buf as never,
-      buf.length as never,
-    ) as unknown as number;
+      this.info.handle,
+      kIOHIDReportTypeOutput,
+      reportId,
+      buf,
+      buf.length,
+    );
     if (result === kIOReturnSuccess) {
       this.setReportCount++;
     }
@@ -469,9 +445,8 @@ export class HidDevice {
    * thread's run loop.
    *
    * On macOS this succeeds even without Input Monitoring permission - TCC
-   * withholds the *reports*, not the registration. That asymmetry is the whole
-   * diagnostic: the kernel's InputReportCount climbs while `inputReportCount`
-   * stays 0.
+   * can withhold reports, not registration. A zero count alone does not prove
+   * a permission failure: the device may simply be idle.
    */
   startReading(handler: InputReportHandler): void {
     if (!this.#open) {
@@ -488,7 +463,7 @@ export class HidDevice {
     this.#inputBuffer = bound.api.alloc("uint8_t", size);
 
     this.#callbackPtr = bound.api.register(
-      ((
+      (
         _context: unknown,
         _result: number,
         _sender: unknown,
@@ -500,30 +475,31 @@ export class HidDevice {
         this.inputReportCount++;
         try {
           const length = reportLength;
+          // SAFETY: koffi decodes the declared uint8_t array into numeric bytes.
           const bytes =
             length > 0 && report
-              ? Uint8Array.from(bound.api.decode(report, "uint8_t", length) as number[])
+              ? Uint8Array.from(bound.api.decode(report, "uint8_t", length))
               : new Uint8Array(0);
           this.#handler?.(reportId, bytes);
         } catch {
           // A throw here would unwind through C. Swallow and keep the run loop alive.
         }
-      }) as never,
+      },
       bound.api.pointer(bound.IOHIDReportCallbackProto),
     );
 
     bound.IOHIDDeviceRegisterInputReportCallback(
-      this.info.handle as never,
-      this.#inputBuffer as never,
-      size as never,
-      this.#callbackPtr as never,
-      null as never,
+      this.info.handle,
+      this.#inputBuffer,
+      size,
+      this.#callbackPtr,
+      null,
     );
 
     bound.IOHIDDeviceScheduleWithRunLoop(
-      this.info.handle as never,
-      bound.CFRunLoopGetCurrent() as never,
-      defaultRunLoopMode() as never,
+      this.info.handle,
+      bound.CFRunLoopGetCurrent(),
+      defaultRunLoopMode(),
     );
     this.#scheduled = true;
   }
@@ -533,16 +509,21 @@ export class HidDevice {
     if (this.#scheduled && bound) {
       try {
         bound.IOHIDDeviceUnscheduleFromRunLoop(
-          this.info.handle as never,
-          bound.CFRunLoopGetCurrent() as never,
-          defaultRunLoopMode() as never,
+          this.info.handle,
+          bound.CFRunLoopGetCurrent(),
+          defaultRunLoopMode(),
         );
       } catch {
         // Teardown is best-effort.
       }
       this.#scheduled = false;
     }
-    if (this.#callbackPtr && bound) {
+    // Keep the callback and stable buffer alive until IOKit is closed.
+    if (this.#open && bound) {
+      bound.IOHIDDeviceClose(this.info.handle, kIOHIDOptionsTypeNone);
+    }
+    this.#open = false;
+    if (this.#callbackPtr !== null && bound) {
       try {
         bound.api.unregister(this.#callbackPtr);
       } catch {
@@ -550,13 +531,12 @@ export class HidDevice {
       }
     }
     this.#callbackPtr = null;
+    // koffi.alloc uses calloc without a GC finalizer; dropping the pointer leaks.
+    if (this.#inputBuffer !== null && bound) {
+      bound.api.free(this.#inputBuffer);
+    }
     this.#inputBuffer = null;
     this.#handler = null;
-
-    if (this.#open && bound) {
-      bound.IOHIDDeviceClose(this.info.handle as never, kIOHIDOptionsTypeNone as never);
-    }
-    this.#open = false;
   }
 }
 
@@ -568,11 +548,7 @@ export class HidDevice {
  * Returns the CFRunLoopRunResult (1 finished, 2 stopped, 3 timed out, 4 handled).
  */
 export function pump(seconds = 0.005): number {
-  return bindings().CFRunLoopRunInMode(
-    defaultRunLoopMode() as never,
-    seconds as never,
-    false as never,
-  ) as unknown as number;
+  return bindings().CFRunLoopRunInMode(defaultRunLoopMode(), seconds, false);
 }
 
 /** `kCFRunLoopRunHandledSource` - the pump handled a source and may have more queued. */
@@ -583,8 +559,8 @@ export function shutdownManager(): void {
   if (sharedManager !== null) {
     try {
       const bound = bindings();
-      bound.IOHIDManagerClose(sharedManager as never, kIOHIDOptionsTypeNone as never);
-      bound.CFRelease(sharedManager as never);
+      bound.IOHIDManagerClose(sharedManager, kIOHIDOptionsTypeNone);
+      bound.CFRelease(sharedManager);
     } catch {
       // Teardown is best-effort.
     }

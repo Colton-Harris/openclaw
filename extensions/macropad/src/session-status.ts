@@ -186,10 +186,10 @@ function write(
 ): SessionActivityState {
   const current = state.entries.get(sessionKey);
   const metadata = mergeMetadata(current, next);
-  const winner: SessionActivityEntry = accepts(current, next)
-    ? { activity: next.activity, source: next.source, ts: next.ts, ...metadata }
-    : // SAFETY: `accepts` returns true whenever `current` is undefined.
-      { ...(current as SessionActivityEntry), ...metadata };
+  const winner: SessionActivityEntry =
+    !current || accepts(current, next)
+      ? { activity: next.activity, source: next.source, ts: next.ts, ...metadata }
+      : { ...current, ...metadata };
   const entries = new Map(state.entries);
   entries.set(sessionKey, winner);
   return { entries };

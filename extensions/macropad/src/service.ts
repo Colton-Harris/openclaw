@@ -199,7 +199,7 @@ export class MacropadService {
    * Records it and stops there ON PURPOSE. Binding a press to a session action
    * is a separate change: the `v.oai.hid` key payload shape has never actually
    * been observed on this firmware - a 30-minute passive capture caught four
-   * dial events and zero key events - so anything that branched on a key's
+   * joystick events and zero key events - so anything that branched on a key's
    * fields today would be branching on a guess. Logging is the honest ceiling
    * until a real press is captured, and it is what makes that capture possible.
    */
@@ -416,6 +416,7 @@ export function normalizeSessionRows(payload: unknown): readonly SessionRowLike[
   if (typeof payload !== "object" || payload === null) {
     return undefined;
   }
+  // SAFETY: payload was narrowed to a non-null object; sessions remains unknown.
   const sessions = (payload as { sessions?: unknown }).sessions;
   if (!Array.isArray(sessions)) {
     return undefined;
@@ -425,6 +426,7 @@ export function normalizeSessionRows(payload: unknown): readonly SessionRowLike[
     if (typeof value !== "object" || value === null) {
       continue;
     }
+    // SAFETY: value was narrowed to a non-null object; every consumed field is validated.
     const row = value as Record<string, unknown>;
     if (typeof row.key !== "string" || row.key.length === 0) {
       continue;

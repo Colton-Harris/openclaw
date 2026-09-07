@@ -82,15 +82,15 @@ export { RpcError, RpcTimeoutError };
 
 /** `v.oai.hid` - a custom key event. */
 export type KeyEvent = {
-  /** key index */
-  k: number;
-  /** action code: 1 press, 0 release */
+  /** Firmware key identity; physical payload encoding remains unverified. */
+  k: string | number;
+  /** Raw action code; do not infer press/release semantics before capture. */
   act: number;
-  /** agent slot */
-  ag: number;
+  /** Optional vendor metadata, retained without interpreting it. */
+  ag?: unknown;
 };
 
-/** `v.oai.rad` - joystick / dial position. */
+/** `v.oai.rad` - joystick position. */
 export type RadialEvent = {
   /** angle */
   a: number;
@@ -334,10 +334,40 @@ export class CodexMicroTransport {
     }
 
     this.#opts.events?.notification?.(message.method, message.params);
+    const params = message.params;
     if (message.method === "v.oai.hid") {
-      this.#opts.events?.key?.(message.params as KeyEvent);
+      if (
+        typeof params === "object" &&
+        params !== null &&
+        "k" in params &&
+        (typeof params.k === "string" || typeof params.k === "number") &&
+        "act" in params &&
+        typeof params.act === "number" &&
+        Number.isFinite(params.act)
+      ) {
+        this.#opts.events?.key?.({
+          k: params.k,
+          act: params.act,
+          ...("ag" in params ? { ag: params.ag } : {}),
+        });
+      } else {
+        this.#warnDropped(`macropad: unrecognized v.oai.hid payload: ${JSON.stringify(params)}`);
+      }
     } else if (message.method === "v.oai.rad") {
-      this.#opts.events?.radial?.(message.params as RadialEvent);
+      if (
+        typeof params === "object" &&
+        params !== null &&
+        "a" in params &&
+        typeof params.a === "number" &&
+        Number.isFinite(params.a) &&
+        "d" in params &&
+        typeof params.d === "number" &&
+        Number.isFinite(params.d)
+      ) {
+        this.#opts.events?.radial?.({ a: params.a, d: params.d });
+      } else {
+        this.#warnDropped(`macropad: unrecognized v.oai.rad payload: ${JSON.stringify(params)}`);
+      }
     }
   }
 
@@ -466,6 +496,7 @@ export function parseDeviceStatus(reply: unknown): DeviceStatusReply {
   if (typeof reply !== "object" || reply === null) {
     return {};
   }
+  // SAFETY: reply was narrowed to a non-null object; fields are checked individually.
   const record = reply as Record<string, unknown>;
   return {
     ...(typeof record.version === "string" ? { version: record.version } : {}),

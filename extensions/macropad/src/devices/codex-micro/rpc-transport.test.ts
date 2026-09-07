@@ -196,6 +196,31 @@ describe("inbound input path", () => {
     expect(warnings).toEqual([]);
   });
 
+  it.each([
+    ["v.oai.hid", { k: "AG00", act: "unknown" }],
+    ["v.oai.hid", null],
+    ["v.oai.rad", { a: 0, d: "unknown" }],
+  ])("retains malformed %s diagnostics without emitting a typed event", (method, params) => {
+    const notifications: unknown[] = [];
+    const typed: unknown[] = [];
+    const warnings: string[] = [];
+    const transport = new CodexMicroTransport({
+      warn: (message) => warnings.push(message),
+      events: {
+        key: (event) => typed.push(event),
+        radial: (event) => typed.push(event),
+        notification: (_method, event) => notifications.push(event),
+      },
+    });
+    for (const packet of packetsFor(JSON.stringify({ m: method, p: params }))) {
+      transport.ingestInputReport(REPORT_ID, packet);
+    }
+    expect(notifications).toEqual([params]);
+    expect(typed).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(method);
+  });
+
   it("still routes a long-form notification", () => {
     const radial: RadialEvent[] = [];
     const transport = new CodexMicroTransport({

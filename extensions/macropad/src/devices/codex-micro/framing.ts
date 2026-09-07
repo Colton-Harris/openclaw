@@ -300,6 +300,7 @@ export function parseRpcMessage(text: string): RpcMessage | null {
     return null;
   }
 
+  // SAFETY: obj was narrowed to a non-null object; protocol fields are checked below.
   const rec = obj as Record<string, unknown>;
 
   // THE DISCRIMINATOR IS `id`, NOT `method`. This firmware echoes the method

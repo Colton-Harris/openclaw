@@ -44,17 +44,6 @@ const IDENTIFY_FRAME = uniformFrame({
   effect: MACROPAD_EFFECTS.solid,
 });
 
-/**
- * The firmware's own key ids, as the contract's `DeviceKeyEvent.key` wants them.
- *
- * `v.oai.hid` reports a bare index; the plugin's binder and the Control UI
- * speak `AG00`-style ids, so the mapping happens here rather than leaking a raw
- * integer through the seam.
- */
-function agentKeyId(index: number): string {
-  return `AG${String(index).padStart(2, "0")}`;
-}
-
 class CodexMicroDeviceTransport implements DeviceTransport {
   readonly #rpc: CodexMicroTransport;
   readonly #listeners = new Set<(event: DeviceInputEvent) => void>();
@@ -71,10 +60,9 @@ class CodexMicroDeviceTransport implements DeviceTransport {
       ...(options.warn === undefined ? {} : { warn: options.warn }),
       events: {
         key: (event: KeyEvent) => {
-          if (typeof event?.k !== "number" || typeof event?.act !== "number") {
-            return;
-          }
-          this.#emit({ type: "key", key: agentKeyId(event.k), action: event.act });
+          // Retain the firmware identity verbatim; do not invent an AGxx mapping
+          // for numeric ids before the physical key payload has been observed.
+          this.#emit({ type: "key", key: String(event.k), action: event.act });
         },
         radial: (event: RadialEvent) => {
           if (typeof event?.a !== "number" || typeof event?.d !== "number") {

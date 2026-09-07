@@ -147,6 +147,7 @@ export function composeFrame(
   // SAFETY: the loop above ran exactly MACROPAD_SLOT_COUNT times, so this is the
   // branded six-tuple by construction. This cast is the only one in the module
   // and is why no caller can mint a partial frame.
+  // SAFETY: the loop constructed exactly six indexed frames, satisfying the brand.
   return frames as unknown as MacropadFullFrame;
 }
 

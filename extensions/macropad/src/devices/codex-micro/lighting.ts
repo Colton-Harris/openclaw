@@ -66,6 +66,7 @@ export const OFF: KeyLight = { color: 0x00_00_00, brightness: 0, effect: MACROPA
 
 /** All six keys identical - the common case, and safe by construction. */
 export function uniformFrame(light: KeyLight): KeyFrame {
+  // SAFETY: AGENT_KEY_COUNT is six and every element is a complete KeyLight.
   return Array.from({ length: AGENT_KEY_COUNT }, () => ({ ...light })) as unknown as KeyFrame;
 }
 
@@ -81,6 +82,7 @@ export function frameFromColors(
     brightness,
     effect,
     ...(opts.speed === undefined ? {} : { speed: opts.speed }),
+    // SAFETY: map preserves the six entries of the input KeyFrame.
   })) as unknown as KeyFrame;
 }
 
@@ -93,6 +95,7 @@ export function withKey(frame: KeyFrame, id: number, light: KeyLight): KeyFrame 
   assertKeyId(id);
   const next = frame.map((key) => ({ ...key }));
   next[id] = { ...light };
+  // SAFETY: next copies all six entries and only replaces one validated index.
   return next as unknown as KeyFrame;
 }
 
@@ -172,5 +175,6 @@ export function fullFrameToParams(frame: MacropadFullFrame): ThStatusParam[] {
   // `frameToParams` proves every `effect` is a code this firmware knows, which
   // is the only way `MacropadKeyFrame["effect"]` (a plain integer from the
   // contract schema) narrows to `EffectId`.
+  // SAFETY: MacropadFullFrame is the same six complete lighting entries, with a brand.
   return frameToParams(frame as unknown as KeyFrame);
 }

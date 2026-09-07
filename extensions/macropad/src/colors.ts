@@ -78,10 +78,8 @@ export function resolveSessionColor(id: string | undefined): number | undefined 
     return undefined;
   }
   const normalized = id.trim().toLowerCase();
-  return MACROPAD_SESSION_COLOR_IDS.some((known) => known === normalized)
-    ? // SAFETY: the `some` above proved `normalized` is one of the eight ids.
-      MACROPAD_SESSION_COLOR_RGB[normalized as MacropadSessionColorId]
-    : undefined;
+  const known = MACROPAD_SESSION_COLOR_IDS.find((candidate) => candidate === normalized);
+  return known === undefined ? undefined : MACROPAD_SESSION_COLOR_RGB[known];
 }
 
 /** Clamp an arbitrary number into the device's inclusive 0-1 brightness range. */

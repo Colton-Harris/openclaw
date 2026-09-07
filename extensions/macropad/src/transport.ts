@@ -47,11 +47,11 @@ export type DeviceIdentity = {
 export type DeviceKeyEvent = {
   type: "key";
   key: string;
-  /** Firmware `act`: 1 is press, 0 is release. */
+  /** Raw firmware `act`; press/release semantics still require physical capture. */
   action: number;
 };
 
-/** Dial or analog-stick position, from the firmware's `v.oai.rad` reports. */
+/** Analog-stick position, from the firmware's `v.oai.rad` reports. */
 export type DeviceRadialEvent = {
   type: "radial";
   angle: number;

@@ -29,11 +29,6 @@ const DEFAULTS = {
 const MIN_RESYNC_SECONDS = 1;
 const MAX_RESYNC_SECONDS = 120;
 
-function readBoolean(source: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const value = source[key];
-  return typeof value === "boolean" ? value : fallback;
-}
-
 function readUnitInterval(source: Record<string, unknown>, key: string, fallback: number): number {
   const value = source[key];
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -66,12 +61,13 @@ function readResyncMs(source: Record<string, unknown>): number {
 
 export function resolveMacropadConfig(raw: unknown): MacropadConfig {
   const source: Record<string, unknown> =
+    // SAFETY: only non-null objects reach the record view; each field is validated below.
     typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
   const serial = readSerial(source);
   return {
-    enabled: readBoolean(source, "enabled", true),
+    enabled: typeof source.enabled === "boolean" ? source.enabled : true,
     ...(serial === undefined ? {} : { deviceSerial: serial }),
-    autoBind: readBoolean(source, "autoBind", true),
+    autoBind: typeof source.autoBind === "boolean" ? source.autoBind : true,
     resyncIntervalMs: readResyncMs(source),
     lighting: {
       brightness: readUnitInterval(source, "brightness", DEFAULTS.brightness),
@@ -83,7 +79,8 @@ export function resolveMacropadConfig(raw: unknown): MacropadConfig {
         DEFAULTS.colorAwaitingApproval,
       ),
       colorError: readColor(source, "colorError", DEFAULTS.colorError),
-      useSessionColors: readBoolean(source, "useSessionColors", true),
+      useSessionColors:
+        typeof source.useSessionColors === "boolean" ? source.useSessionColors : true,
     },
   };
 }

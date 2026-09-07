@@ -61,6 +61,7 @@ export class Correlator {
         return timer;
       });
     this.#clearTimeout =
+      // SAFETY: the default timer factory above returns a native setTimeout handle.
       opts.clearTimeoutFn ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
