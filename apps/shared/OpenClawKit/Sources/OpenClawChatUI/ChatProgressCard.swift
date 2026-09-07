@@ -36,9 +36,25 @@ struct ChatProgressCard: View {
     let markdown: String?
 
     @State private var isExpanded = false
+    @State private var expandedContentHeight: CGFloat = 0
+
+    /// Caps the expanded body so a long plan or a wide table cannot grow the card
+    /// past the screen and carry the collapse control off with it. Matches the bound
+    /// on `OpenClawChatSwarmProgressView`, the sibling panel in the same stack.
+    private static let expandedMaxHeight: CGFloat = 260
 
     private var completedCount: Int {
         self.steps.count { $0.status == .completed }
+    }
+
+    /// `nil` until the body has been measured, so the card never flashes at zero height.
+    private var expandedHeight: CGFloat? {
+        guard self.expandedContentHeight > 0 else { return nil }
+        return min(self.expandedContentHeight, Self.expandedMaxHeight)
+    }
+
+    private var cornerRadius: CGFloat {
+        self.isExpanded ? 16 : 18
     }
 
     private var currentStep: ProgressCardStep? {
@@ -82,27 +98,34 @@ struct ChatProgressCard: View {
                 Divider()
                     .overlay(OpenClawChatTheme.divider)
                     .padding(.horizontal, 12)
-                VStack(alignment: .leading, spacing: 9) {
-                    if let markdown {
-                        OpenClawChatMarkdownView(
-                            text: markdown,
-                            isUserMessage: false,
-                            variant: .compact,
-                            textColor: OpenClawChatTheme.assistantText)
-                    }
-                    VStack(alignment: .leading, spacing: 7) {
-                        ForEach(Array(self.steps.enumerated()), id: \.offset) { _, step in
-                            self.stepRow(step)
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        if let markdown {
+                            OpenClawChatMarkdownView(
+                                text: markdown,
+                                isUserMessage: false,
+                                variant: .compact,
+                                textColor: OpenClawChatTheme.assistantText)
+                        }
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(Array(self.steps.enumerated()), id: \.offset) { _, step in
+                                self.stepRow(step)
+                            }
                         }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 9)
+                    .padding(.bottom, 11)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.height
+                    } action: { self.expandedContentHeight = $0 }
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 9)
-                .padding(.bottom, 11)
+                .frame(height: self.expandedHeight)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(ChatProgressCardSurface(cornerRadius: self.isExpanded ? 16 : 18))
+        .clipShape(RoundedRectangle(cornerRadius: self.cornerRadius, style: .continuous))
+        .modifier(ChatProgressCardSurface(cornerRadius: self.cornerRadius))
         .foregroundStyle(OpenClawChatTheme.assistantText)
     }
 
