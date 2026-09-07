@@ -5,6 +5,7 @@ import { workboardCardBoardId } from "../../workboard/board-filter.ts";
 import { WORKBOARD_STATUSES } from "../../workboard/types.ts";
 import type { BoardWidget } from "../types.ts";
 import type { PluginBoardWidgetRenderer } from "./index.ts";
+import { renderWorkboardReceipts } from "./workboard-receipts.ts";
 import { WorkboardWidgetElement } from "./workboard-widget.ts";
 
 class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
@@ -27,6 +28,12 @@ class OpenClawWorkboardMiniWidget extends WorkboardWidgetElement {
     const cards = boardId
       ? this.cards.filter((card) => workboardCardBoardId(card) === boardId)
       : this.cards;
+    if (this.readStringProp("view") === "receipts") {
+      if (!this.loaded) {
+        return html`<p class="workboard-widget__state">${t("workboard.widget.loading")}</p>`;
+      }
+      return renderWorkboardReceipts(cards, limit);
+    }
     const topCards = cards
       .filter((card) => card.status === "ready" || card.status === "running")
       .toSorted(
