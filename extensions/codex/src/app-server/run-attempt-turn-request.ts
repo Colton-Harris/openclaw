@@ -10,6 +10,7 @@ import {
 import { assertCodexSessionRuntimeOwnership } from "./binding-connection.js";
 import { prepareCodexWorkspaceReferences } from "./client-runtime.js";
 import { isCodexAppServerIndeterminateRequestCancellationError } from "./client.js";
+import { joinPresentSections } from "./developer-instruction-sections.js";
 import { resolveCodexExplicitSkillInputs } from "./explicit-skill-input.js";
 import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
 import { getCodexInferenceThread } from "./inference-routing.js";
@@ -21,7 +22,6 @@ import {
   withCodexAppServerFastModeServiceTier,
 } from "./run-attempt-lifecycle.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
-import { joinPresentSections } from "./run-attempt-state.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
 import { buildTurnStartParams } from "./thread-lifecycle.js";
 import { recordCodexTrajectoryContext } from "./trajectory.js";
