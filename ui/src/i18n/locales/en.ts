@@ -3842,9 +3842,15 @@ export const en: TranslationMap & {
       noActiveCards: "No ready or running cards.",
       receiptsTitle: "Work receipts",
       receiptsScope:
-        "Latest recorded evidence per card, not independently verified completion. Local files are not opened by this view. Run, delivery, and human-action coverage is not included.",
+        "Latest recorded evidence per card, not independently verified completion. Local files are not opened by this view. Failure coverage is incomplete: cron, delivery, unreported runs, and human actions are not included.",
       receiptsPassed: "Recorded passes",
       receiptsFailed: "Recorded failures",
+      receiptsAttempts: "Failed run history",
+      receiptsAttemptsScope:
+        "Historical terminal Workboard attempts in this snapshot, not current card status or proof that a retry recovered. Missing or invalid records remain unknown.",
+      receiptsAttemptsEmpty: "No complete failed-attempt records in this snapshot.",
+      receiptsAttemptNoError: "No error detail was recorded.",
+      receiptsAttemptRun: "Run",
       receiptsUnknown: "Cards without complete linked evidence: {count}",
       receiptsEmpty: "No linked evidence in this snapshot.",
       receiptsLink: "Open evidence",

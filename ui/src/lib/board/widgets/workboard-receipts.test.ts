@@ -228,4 +228,74 @@ describe("Workboard receipt view", () => {
       expect(element.textContent).toContain("Cards without complete linked evidence: 1");
     },
   );
+  it("shows historical failed attempts without inventing failed cards or successful retries", async () => {
+    const { element } = await show([
+      evidenceCard({
+        status: "done",
+        metadata: {
+          attempts: [
+            {
+              id: "timeout",
+              status: "failed",
+              startedAt: 10,
+              endedAt: 20,
+              error: "<img src=x> timed out",
+              runId: "run-timeout",
+            },
+            { id: "success", status: "succeeded", startedAt: 30, endedAt: 40 },
+            { id: "blocked", status: "blocked", startedAt: 50, endedAt: 60 },
+          ],
+        },
+      }),
+    ]);
+    const section = element.querySelector("[data-receipt-attempts]");
+    expect(section?.querySelectorAll("details")).toHaveLength(1);
+    expect(section?.textContent).toContain("run-timeout");
+    expect(section?.textContent).toContain("<img src=x> timed out");
+    expect(section?.querySelector("img,a")).toBeNull();
+    expect(section?.textContent).toContain("Historical");
+    expect(element.querySelector('[data-receipt-status="passed"] details')).toBeNull();
+  });
+  it.each([
+    { endedAt: undefined },
+    { endedAt: 9 },
+    { endedAt: Date.now() + 1000000 },
+    { startedAt: -1 },
+    { id: "" },
+    { status: "running" },
+  ])("does not fabricate terminal failure from an incomplete attempt: %j", async (change) => {
+    const { element } = await show([
+      evidenceCard({
+        metadata: {
+          attempts: [{ id: "bad", status: "failed", startedAt: 10, endedAt: 20, ...change }],
+        },
+      }),
+    ]);
+    expect(element.querySelector("[data-receipt-attempts] details")).toBeNull();
+    expect(element.textContent).toContain("coverage is incomplete");
+  });
+  it("bounds newest-first history and rejects conflicting duplicate attempt identities", async () => {
+    const attempts = Array.from({ length: 7 }, (_, index) => ({
+      id: `attempt-${index}`,
+      status: "failed",
+      startedAt: 10,
+      endedAt: 20 + index,
+    }));
+    const { element } = await show([
+      evidenceCard({
+        metadata: {
+          attempts: [
+            ...attempts,
+            { id: "ambiguous", status: "failed", startedAt: 10, endedAt: 40 },
+            { id: "ambiguous", status: "succeeded", startedAt: 10, endedAt: 40 },
+          ],
+        },
+      }),
+    ]);
+    const section = element.querySelector("[data-receipt-attempts]");
+    expect(section?.querySelectorAll("details")).toHaveLength(5);
+    expect(section?.querySelector("details")?.textContent).toContain("attempt-6");
+    expect(section?.textContent).toContain("Showing 5 of 7");
+    expect(section?.textContent).not.toContain("ambiguous");
+  });
 });
