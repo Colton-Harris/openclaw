@@ -184,6 +184,7 @@ export type FollowupRun = {
     messageProvider?: string;
     clientCaps?: string[];
     toolBindings?: Readonly<Record<string, unknown>>;
+    authenticatedUserProfileId?: string;
     chatType?: ChatType;
     agentAccountId?: string;
     conversationRoutePeerId?: string;

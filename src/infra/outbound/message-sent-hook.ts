@@ -14,6 +14,8 @@ const log = createSubsystemLogger("outbound/message-sent-hook");
 export type MessageSentEvent = {
   success: boolean;
   content: string;
+  deliveryAttemptId?: string;
+  threadId?: string | number;
   error?: string;
   messageId?: string;
 };
@@ -25,6 +27,7 @@ export function createMessageSentEmitter(params: {
   to: string;
   accountId?: string;
   sessionKeyForInternalHooks?: string;
+  threadId?: string | number;
   runId?: string;
   isGroup?: boolean;
   groupId?: string;
@@ -40,6 +43,8 @@ export function createMessageSentEmitter(params: {
       to: params.to,
       content: event.content,
       success: event.success,
+      deliveryAttemptId: event.deliveryAttemptId,
+      threadId: event.threadId ?? params.threadId,
       error: event.error,
       channelId: params.channel,
       accountId: params.accountId,

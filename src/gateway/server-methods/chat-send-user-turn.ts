@@ -197,6 +197,9 @@ export function prepareChatSendUserTurn(params: {
     SessionCreation: { ...creation, ...(sandbox ? { sandbox } : {}) },
     ...resolveChatSendCallerContext(client, request.clientInfo, originatingChannel),
     GatewayRunToolBindings: request.toolBindings,
+    ...(client?.authenticatedUserProfile?.profileId
+      ? { GatewayAuthenticatedUserProfileId: client.authenticatedUserProfile.profileId }
+      : {}),
   };
   if (attachments.mediaPathOffloadPaths.length > 0) {
     // Pre-staged offloads must use structured facts and marker text so the

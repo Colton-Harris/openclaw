@@ -536,4 +536,73 @@ describe("sidebar attention source publication", () => {
     await mentions.refresh();
     expect(request).not.toHaveBeenCalled();
   });
+
+  it("loads and persistently acknowledges only the authenticated profile handoff", async () => {
+    const row = {
+      id: "handoff-alice",
+      createdAt: 100,
+      summary: "Alice candidate",
+      artifact: { label: "alice.diff", path: "/tmp/alice.diff" },
+      nextAction: "Review Alice candidate.",
+      attempts: [{ state: "delivered" }],
+    };
+    const request = vi.fn(async (method: string) => {
+      if (method === "workboard.handoffs.reminders.claim") {
+        return { handoffs: [] };
+      }
+      if (method === "workboard.handoffs.list") {
+        return { handoffs: [row] };
+      }
+      if (method === "workboard.handoffs.acknowledge") {
+        return { handoff: { ...row, acknowledged: { kind: "gateway" } } };
+      }
+      if (method === "cron.list") {
+        return cronPage();
+      }
+      if (method === "cron.status") {
+        return { enabled: true, triggersEnabled: true, jobs: 0 };
+      }
+      if (method === "models.authStatus") {
+        return { ts: 1, providers: [] };
+      }
+      throw new Error("Unexpected request: " + method);
+    });
+    const harness = createGatewayHarness(mockClient(request));
+    harness.update({
+      hello: {
+        type: "hello-ok",
+        protocol: 1,
+        server: { bootId: "boot-handoff", connId: "connection-handoff" },
+        auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
+        features: {
+          methods: [
+            "workboard.handoffs.list",
+            "workboard.handoffs.reminders.claim",
+            "workboard.handoffs.acknowledge",
+          ],
+        },
+      },
+      selfUser: { id: "alice", identity: { type: "profile", id: "alice" }, name: "Alice" },
+    });
+    store = createStore(harness.gateway);
+    store.activate(SidebarAttentionStoreController);
+    await waitForFast(() =>
+      expect(store?.entries).toMatchObject([
+        expect.objectContaining({
+          type: "attention",
+          kind: "handoff",
+          label: "alice.diff",
+          dismissal: null,
+          handoff: expect.objectContaining({
+            artifact: expect.objectContaining({ path: "/tmp/alice.diff" }),
+          }),
+        }),
+      ]),
+    );
+    await store!.acknowledgeHandoff("handoff-alice");
+    await waitForFast(() =>
+      expect(store?.entries.some((entry) => entry.type === "attention")).toBe(false),
+    );
+    expect(request).toHaveBeenCalledWith("workboard.handoffs.acknowledge", { id: "handoff-alice" });
+  });
 });

@@ -90,6 +90,8 @@ type CanonicalInboundMessageHookContext = {
 type CanonicalSentMessageHookContext = {
   to: string;
   content: string;
+  deliveryAttemptId?: string;
+  threadId?: string | number;
   success: boolean;
   error?: string;
   channelId: string;
@@ -279,8 +281,10 @@ export function buildCanonicalSentMessageHookContext(params: {
   accountId?: string;
   conversationId?: string;
   sessionKey?: string;
+  threadId?: string | number;
   runId?: string;
   messageId?: string;
+  deliveryAttemptId?: string;
   trace?: DiagnosticTraceContext;
   callDepth?: number;
   isGroup?: boolean;
@@ -295,8 +299,10 @@ export function buildCanonicalSentMessageHookContext(params: {
     accountId: params.accountId,
     conversationId: params.conversationId ?? params.to,
     sessionKey: params.sessionKey,
+    threadId: params.threadId,
     runId: params.runId,
     messageId: params.messageId,
+    deliveryAttemptId: params.deliveryAttemptId,
     trace: params.trace,
     callDepth: params.callDepth,
     isGroup: params.isGroup,
@@ -602,7 +608,9 @@ export function toPluginMessageSentEvent(
     content: canonical.content,
     success: canonical.success,
     ...(canonical.messageId ? { messageId: canonical.messageId } : {}),
+    ...(canonical.deliveryAttemptId ? { deliveryAttemptId: canonical.deliveryAttemptId } : {}),
     ...(canonical.sessionKey ? { sessionKey: canonical.sessionKey } : {}),
+    ...(canonical.threadId !== undefined ? { threadId: canonical.threadId } : {}),
     ...(canonical.runId ? { runId: canonical.runId } : {}),
     ...(canonical.error ? { error: canonical.error } : {}),
   };

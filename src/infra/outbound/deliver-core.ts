@@ -473,6 +473,10 @@ export async function deliverOutboundPayloadsCore(
         ? mediaMessageIds.last
         : deliveredResults.at(-1)?.messageId;
       recordMessageSentEvent({
+        deliveryAttemptId: preparedEntry.deliveryAttemptId,
+        ...(preparedTarget.threadId !== null && preparedTarget.threadId !== undefined
+          ? { threadId: preparedTarget.threadId }
+          : {}),
         success: deliveredResults.length > 0,
         content: payloadSummary.hookContent ?? payloadSummary.text,
         messageId: lastMessageId,
@@ -518,6 +522,10 @@ export async function deliverOutboundPayloadsCore(
       // bookkeeping. Reaching this fallback first means the logical payload's
       // provider fan-out itself was incomplete, even if an earlier part sent.
       recordMessageSentEvent({
+        deliveryAttemptId: preparedEntry.deliveryAttemptId,
+        ...(preparedTarget.threadId !== null && preparedTarget.threadId !== undefined
+          ? { threadId: preparedTarget.threadId }
+          : {}),
         success: false,
         content: payloadSummary.hookContent ?? payloadSummary.text,
         error: formatErrorMessage(err),

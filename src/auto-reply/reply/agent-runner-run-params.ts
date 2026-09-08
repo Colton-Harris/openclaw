@@ -163,6 +163,7 @@ export async function buildEmbeddedRunBaseParams(params: {
     sourceReplyDeliveryMode: params.run.sourceReplyDeliveryMode,
     clientCaps: params.run.clientCaps,
     toolBindings: params.run.toolBindings,
+    authenticatedUserProfileId: params.run.authenticatedUserProfileId,
     taskSuggestionDeliveryMode: params.run.taskSuggestionDeliveryMode,
     skillWorkshopProposalRevision: params.run.skillWorkshopProposalRevision,
     skillLibraryAuthoring: params.run.skillLibraryAuthoring,

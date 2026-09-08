@@ -1,5 +1,12 @@
 // Workboard plugin module implements gateway behavior.
 import type { WorkboardCard } from "@openclaw/workboard-contract";
+import {
+  WEB_PUSH_USER_PREFERENCES_KEY,
+  isWebPushQuietHours,
+  resolveEffectiveWebPushPreferences,
+  webPushCategoryEnabled,
+  getUserPreferences,
+} from "openclaw/plugin-sdk/notification-preferences-runtime";
 import type { OpenClawPluginApi } from "../api.js";
 import { redactClaimToken } from "./card-redaction.js";
 import {
@@ -16,6 +23,7 @@ import {
   registerWorkboardWorkspaceCardMethods,
   registerWorkboardWorkspaceWorkflowMethods,
 } from "./gateway-workspace-methods.js";
+import type { HandoffService } from "./handoff.js";
 import { registerWorkboardStoreLifecycle } from "./store-lifecycle.js";
 import { WorkboardStore } from "./store.js";
 
@@ -39,6 +47,7 @@ async function redactCardResult(card: Promise<WorkboardCard>) {
 export function registerWorkboardGatewayMethods(params: {
   api: OpenClawPluginApi;
   store?: WorkboardStore;
+  handoffs?: HandoffService;
 }) {
   const { api: hostApi } = params;
   const store = params.store ?? WorkboardStore.openSqlite();
@@ -347,4 +356,112 @@ export function registerWorkboardGatewayMethods(params: {
       },
     ],
   ]);
+
+  if (params.handoffs) {
+    const handoffs = params.handoffs;
+    const requireProfile = (
+      context: Parameters<Parameters<OpenClawPluginApi["registerGatewayMethod"]>[1]>[0],
+    ) => {
+      const profileId = context.client?.authenticatedUserProfile?.profileId;
+      if (typeof profileId !== "string" || !profileId) {
+        throw new Error("authenticated user profile is required.");
+      }
+      return profileId;
+    };
+    api.registerGatewayMethod(
+      "workboard.handoffs.list",
+      async (context) => {
+        try {
+          context.respond(true, {
+            handoffs: await handoffs.listForProfile(requireProfile(context)),
+          });
+        } catch (error) {
+          respondError(context.respond, error);
+        }
+      },
+      { scope: READ_SCOPE, profileAccess: "required" },
+    );
+    api.registerGatewayMethod(
+      "workboard.handoffs.create",
+      async (context) => {
+        try {
+          const profileId = requireProfile(context);
+          const input = context.params as Record<string, unknown>;
+          context.respond(true, {
+            handoff: await handoffs.create({
+              summary: input.summary as string,
+              artifact: input.artifact as {
+                label: string;
+                url?: string;
+                path?: string;
+                mimeType?: string;
+              },
+              nextAction: input.nextAction as string,
+              deliveryText: input.deliveryText as string,
+              recipient: input.recipient as {
+                channel?: string;
+                accountId?: string;
+                conversationId?: string;
+                to?: string;
+                threadId?: string | number;
+                sessionKey?: string;
+              },
+              ownerProfileId: profileId,
+              idempotencyKey:
+                typeof input.idempotencyKey === "string" ? input.idempotencyKey : undefined,
+            }),
+          });
+        } catch (error) {
+          respondError(context.respond, error);
+        }
+      },
+      { scope: WRITE_SCOPE, profileAccess: "required" },
+    );
+    api.registerGatewayMethod(
+      "workboard.handoffs.reminders.claim",
+      async (context) => {
+        try {
+          const profileId = requireProfile(context);
+          const at = Date.now();
+          const preferences = resolveEffectiveWebPushPreferences({
+            user: getUserPreferences(profileId, [WEB_PUSH_USER_PREFERENCES_KEY])[
+              WEB_PUSH_USER_PREFERENCES_KEY
+            ],
+          });
+          context.respond(true, {
+            handoffs: await handoffs.claimDueReminders(
+              { ownerProfileId: profileId },
+              {
+                enabled: webPushCategoryEnabled(preferences, "agent-finished"),
+                inQuietHours: isWebPushQuietHours(preferences, at),
+              },
+              at,
+            ),
+          });
+        } catch (error) {
+          respondError(context.respond, error);
+        }
+      },
+      { scope: WRITE_SCOPE, profileAccess: "required" },
+    );
+    api.registerGatewayMethod(
+      "workboard.handoffs.acknowledge",
+      async (context) => {
+        try {
+          const profileId = requireProfile(context);
+          const id = readId(context.params as Record<string, unknown>);
+          const visible = (await handoffs.listForProfile(profileId)).find(
+            (record) => record.id === id,
+          );
+          if (!visible) {
+            throw new Error("handoff not found.");
+          }
+          context.respond(true, { handoff: await handoffs.acknowledge(id, "gateway") });
+        } catch (error) {
+          respondError(context.respond, error);
+        }
+      },
+      { scope: WRITE_SCOPE, profileAccess: "required" },
+    );
+  }
 }

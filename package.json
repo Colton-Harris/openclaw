@@ -655,6 +655,10 @@
     "./plugin-sdk/number-runtime": {
       "default": "./dist/plugin-sdk/number-runtime.js"
     },
+    "./plugin-sdk/notification-preferences-runtime": {
+      "types": "./dist/plugin-sdk/notification-preferences-runtime.d.ts",
+      "default": "./dist/plugin-sdk/notification-preferences-runtime.js"
+    },
     "./plugin-sdk/secure-random-runtime": {
       "default": "./dist/plugin-sdk/secure-random-runtime.js"
     },

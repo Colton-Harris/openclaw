@@ -5,6 +5,11 @@ import { createWorkboardAutomationNudgeService } from "./src/automation-nudge.js
 import { createWorkboardChangeEventService } from "./src/change-events.js";
 import { registerWorkboardCommand } from "./src/command.js";
 import {
+  createHandoffChangeEventService,
+  createHandoffService,
+  type HandoffRecord,
+} from "./src/handoff.js";
+import {
   createWorkboardLifecycleService,
   readWorkboardLifecycleSessions,
   syncWorkboardAgentEnded,
@@ -24,6 +29,13 @@ export default definePluginEntry({
   description: "Dashboard workboard for agent-owned issues and sessions.",
   register(api) {
     const store = WorkboardStore.openSqlite();
+    const handoffStore = api.runtime.state.openKeyedStore<HandoffRecord>({
+      namespace: "handoffs",
+      maxEntries: 1000,
+      overflowPolicy: "reject-new",
+    });
+    const handoffs = createHandoffService({ store: handoffStore });
+    const handoffEvents = createHandoffChangeEventService(handoffs);
     const changeEvents = createWorkboardChangeEventService(store);
     const automationNudge = createWorkboardAutomationNudgeService({
       store,
@@ -39,6 +51,7 @@ export default definePluginEntry({
       changeEvents.stop();
       automationNudge.stop();
       lifecycleSync.stop();
+      handoffEvents.stop();
     });
     api.session.controls.registerControlUiDescriptor({
       surface: "tab",
@@ -67,13 +80,42 @@ export default definePluginEntry({
       label: "Workboard summary",
       requiredScopes: ["operator.read"],
     });
-    registerWorkboardGatewayMethods({ api, store });
+    registerWorkboardGatewayMethods({ api, store, handoffs });
     registerWorkboardCommand({ api, store });
     api.registerService(changeEvents);
     api.registerService(automationNudge);
     api.registerService(lifecycleSync);
+    api.registerService(handoffEvents);
     api.on("gateway_start", () => lifecycleSync.onGatewayStart());
     api.on("gateway_stop", () => lifecycleSync.onGatewayStop());
+    api.on("message_sending", (event, context) =>
+      handoffs.markAttempted({
+        ...event,
+        channelId: context.channelId,
+        accountId: context.accountId,
+        conversationId: context.conversationId,
+        sessionKey: context.sessionKey,
+        threadId: event.threadId,
+      }),
+    );
+    api.on("message_sent", (event, context) =>
+      handoffs.markSent({
+        ...event,
+        channelId: context.channelId,
+        accountId: context.accountId,
+        conversationId: context.conversationId,
+        sessionKey: context.sessionKey,
+      }),
+    );
+    api.on("message_received", (event, context) =>
+      handoffs.markReceived({
+        ...event,
+        channelId: context.channelId,
+        accountId: context.accountId,
+        conversationId: context.conversationId,
+        sessionKey: context.sessionKey,
+      }),
+    );
     api.on("subagent_ended", (event) =>
       store.runOperation(async () => {
         await syncWorkboardSubagentEnded({
@@ -112,7 +154,7 @@ export default definePluginEntry({
     api.registerTool(
       (context) =>
         guardWorkboardToolsForWorkspaceAccess(
-          createWorkboardTools({ context, store }),
+          createWorkboardTools({ context, store, handoffs }),
           context,
           api.runtime.sandbox.resolveWorkspaceAuthority,
         ),

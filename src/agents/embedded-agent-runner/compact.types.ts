@@ -38,6 +38,8 @@ export type CompactEmbeddedAgentSessionParams = {
   messageProvider?: string;
   /** Capabilities declared by the gateway client that originated this run. */
   clientCaps?: string[];
+  /** Authenticated Gateway profile bound to this compaction; never inferred from route data. */
+  authenticatedUserProfileId?: string;
   chatType?: ChatType;
   agentAccountId?: string;
   /** Raw peer observed by the inbound routing owner, before identity linking. */

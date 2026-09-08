@@ -11,6 +11,8 @@ export const PREPARED_OUTBOUND_BATCH_SCHEMA_VERSION = 1 as const;
 type PreparedOutboundAcceptedEntry = {
   sourceIndex: number;
   status: "accepted";
+  /** Stable identity shared by message_sending and message_sent for this payload. */
+  deliveryAttemptId?: string;
   payload: ReplyPayload;
   replyHookChanged: boolean;
   messageHookChanged: boolean;

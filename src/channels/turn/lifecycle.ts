@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ExecutionIdentityAdmissionToken as ExecutionToken } from "../../audit/execution-identity-admission.js";
 import { dispatchInboundMessageWithRoutedChannelDispatcher } from "../../auto-reply/dispatch.js";
 import { copyReplyPayloadMetadata, type ReplyPayload } from "../../auto-reply/reply-payload.js";
@@ -63,7 +64,11 @@ type RoutedAssembledChannelTurn = Omit<
 
 type AnyChannelDeliveryAdapter = ChannelEventDeliveryAdapter | ChannelTurnDeliveryAdapter;
 
-type PendingChannelDeliveryAttempt = { payload: ReplyPayload; info: ChannelDeliveryInfo } & (
+type PendingChannelDeliveryAttempt = {
+  payload: ReplyPayload;
+  info: ChannelDeliveryInfo;
+  deliveryAttemptId?: string;
+} & (
   | { state: "fulfilled"; result: ChannelDeliveryResult | void }
   | { state: "rejected"; error: unknown }
 );
@@ -263,6 +268,7 @@ async function settleChannelDeliveryAttempt(params: {
         content: partial?.content ?? attempt.payload.text ?? "",
         error: formatErrorMessage(attempt.error),
         messageId: resolveChannelDeliveryMessageId(partial),
+        deliveryAttemptId: attempt.deliveryAttemptId,
       });
     }
     return undefined;
@@ -290,6 +296,7 @@ async function settleChannelDeliveryAttempt(params: {
         content: partial?.content ?? attempt.payload.text ?? "",
         error: formatErrorMessage(error),
         messageId: resolveChannelDeliveryMessageId(partial),
+        deliveryAttemptId: attempt.deliveryAttemptId,
       });
     }
     throw toErrorObject(error, "channel delivery finalization failed");
@@ -300,6 +307,7 @@ async function settleChannelDeliveryAttempt(params: {
       success: true,
       content: finalized?.content ?? attempt.payload.text ?? "",
       messageId: resolveChannelDeliveryMessageId(finalized),
+      deliveryAttemptId: attempt.deliveryAttemptId,
     });
   }
   const completion = resolvePendingFinalCompletion(attempt.payload);
@@ -321,8 +329,13 @@ async function settleChannelDeliveryAttempt(params: {
 async function applyRoutedDirectMessageSending(params: {
   turn: RoutedAssembledChannelTurn;
   payload: ReplyPayload;
-}): Promise<{ payload: ReplyPayload; suppression?: ChannelDeliveryResult }> {
+}): Promise<{
+  payload: ReplyPayload;
+  deliveryAttemptId: string;
+  suppression?: ChannelDeliveryResult;
+}> {
   const hookRunner = getGlobalHookRunner();
+  const deliveryAttemptId = `delivery:${randomUUID()}`;
   const hookCtx = deriveInboundMessageHookContext(params.turn.ctxPayload);
   const hookResult = await applyMessageSendingHook({
     hookRunner,
@@ -338,10 +351,12 @@ async function applyRoutedDirectMessageSending(params: {
       params.turn.ctxPayload.ReplyToId,
     threadId: params.turn.ctxPayload.MessageThreadId,
     sessionKey: params.turn.routeSessionKey,
+    deliveryAttemptId,
   });
   if (hookResult.cancelled) {
     return {
       payload: params.payload,
+      deliveryAttemptId,
       suppression: createSuppressedChannelDeliveryResult({
         reason: "cancelled_by_message_sending_hook",
         cancelReason: hookResult.cancelReason,
@@ -353,6 +368,7 @@ async function applyRoutedDirectMessageSending(params: {
   if (!payload) {
     return {
       payload: hookResult.payload,
+      deliveryAttemptId,
       suppression: createSuppressedChannelDeliveryResult({
         reason: hookResult.contentRewritten
           ? "empty_after_message_sending_hook"
@@ -360,7 +376,7 @@ async function applyRoutedDirectMessageSending(params: {
       }),
     };
   }
-  return { payload: copyReplyPayloadMetadata(params.payload, payload) };
+  return { payload: copyReplyPayloadMetadata(params.payload, payload), deliveryAttemptId };
 }
 
 function createObserveOnlyDeliveryAdapter(): ChannelEventDeliveryAdapter {
@@ -406,6 +422,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
       to: resolveInboundReplyHookTarget(params.ctxPayload, hookCtx),
       accountId: params.accountId,
       sessionKeyForInternalHooks: params.routeSessionKey,
+      threadId: hookCtx.threadId,
       runId: agentRun[0],
       isGroup: hookCtx.isGroup,
       groupId: hookCtx.groupId,
@@ -540,6 +557,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
                     let effectivePayload = preparedPayload;
                     let result: ChannelDeliveryResult | void = undefined;
                     let directInfo: ChannelDeliveryInfo = info;
+                    let deliveryAttemptId: string | undefined;
                     try {
                       if (
                         ownership === "routed-delivery" &&
@@ -566,6 +584,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
                             payload: effectivePayload,
                           });
                           effectivePayload = hook.payload;
+                          deliveryAttemptId = hook.deliveryAttemptId;
                           if (hook.suppression) {
                             result = hook.suppression;
                           }
@@ -595,6 +614,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
                             state: "rejected",
                             payload: effectivePayload,
                             info: directInfo,
+                            deliveryAttemptId,
                             error,
                           },
                           onDelivered: delivery.onDelivered,
@@ -610,6 +630,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
                         state: "fulfilled",
                         payload: effectivePayload,
                         info: directInfo,
+                        deliveryAttemptId,
                         result,
                       });
                     } else {
@@ -618,6 +639,7 @@ async function dispatchChannelTurnWithDeliveryOwner(
                           state: "fulfilled",
                           payload: effectivePayload,
                           info: directInfo,
+                          deliveryAttemptId,
                           result,
                         },
                         onDelivered: delivery.onDelivered,

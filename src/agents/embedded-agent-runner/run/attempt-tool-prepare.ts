@@ -263,6 +263,7 @@ export function prepareEmbeddedAttemptToolBase(params: {
             messageChannel: attempt.messageChannel,
             clientCaps: attempt.clientCaps,
             toolBindings: attempt.toolBindings,
+            authenticatedUserProfileId: attempt.authenticatedUserProfileId,
             chatType: attempt.chatType,
             exec: {
               ...attempt.execOverrides,

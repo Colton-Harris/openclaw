@@ -339,6 +339,7 @@ export async function buildPreparedCompactionRuntime(prepared: DirectCompactionP
           sessionPermissionPolicy,
           messageProvider: resolvedMessageProvider,
           clientCaps: params.clientCaps,
+          authenticatedUserProfileId: params.authenticatedUserProfileId,
           chatType: params.chatType,
           agentAccountId: params.agentAccountId,
           sessionKey: sandboxSessionKey,

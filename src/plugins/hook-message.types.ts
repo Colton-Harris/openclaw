@@ -194,6 +194,8 @@ export type PluginHookMessageReceivedEvent = {
 export type PluginHookMessageSendingEvent = {
   to: string;
   content: string;
+  /** Stable identity for one logical outbound delivery attempt. */
+  deliveryAttemptId?: string;
   replyToId?: string | number;
   threadId?: string | number;
   metadata?: Record<string, unknown>;
@@ -209,9 +211,12 @@ export type PluginHookMessageSendingResult = {
 export type PluginHookMessageSentEvent = {
   to: string;
   content: string;
+  /** Matches the corresponding message_sending attempt when available. */
+  deliveryAttemptId?: string;
   success: boolean;
   messageId?: string;
   sessionKey?: string;
+  threadId?: string | number;
   runId?: string;
   trace?: DiagnosticTraceContext;
   traceId?: string;

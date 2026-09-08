@@ -269,6 +269,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
     messageProvider: params.messageProvider,
     clientCaps: params.clientCaps,
     toolBindings: params.toolBindings,
+    authenticatedUserProfileId: params.authenticatedUserProfileId,
     // Preserve the Gateway's tri-state capability; undefined hides both GitHub tools.
     githubPublicationAvailable: params.githubPublicationAvailable,
     chatType: params.chatType,
