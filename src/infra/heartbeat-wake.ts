@@ -3,7 +3,7 @@ import { runWithoutOwnedSessionTranscriptWrites } from "../config/sessions/trans
 import { createSubsystemLogger } from "../logging/subsystem.js";
 // Tracks heartbeat wake requests, busy skips, and retry timing.
 import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
-import { normalizeHeartbeatWakeReason } from "./heartbeat-reason.js";
+import { normalizeHeartbeatWakeReason, resolveHeartbeatWakePriority } from "./heartbeat-reason.js";
 import type {
   HeartbeatRunResult,
   HeartbeatScheduledTask,
@@ -92,6 +92,8 @@ type PendingWakeReason = {
   retainedWork?: boolean;
   /** Cron callers waiting for this wake's terminal result. */
   settlements?: HeartbeatWakeSettlement[];
+  /** Ambient cron ticks have no retry authority after their waiters retire. */
+  waitersOwnWake?: boolean;
 };
 
 type PendingWakeGroup = {
@@ -124,34 +126,6 @@ export const HEARTBEAT_IDLE_RETRY_GRACE_MS = 60_000;
 // one aligned monitor tick cannot exhaust gateway or provider capacity.
 const MAX_CONCURRENT_HEARTBEAT_WAKE_TARGETS = 4;
 const wakeLog = createSubsystemLogger("heartbeat/wake");
-const REASON_PRIORITY = {
-  RETRY: 0,
-  INTERVAL: 1,
-  DEFAULT: 2,
-  ACTION: 3,
-} as const;
-
-function resolveWakePriority(params: {
-  source: HeartbeatWakeSource;
-  intent: HeartbeatWakeIntent;
-  reason: string;
-}): number {
-  if (params.intent === "manual" || params.intent === "immediate") {
-    return REASON_PRIORITY.ACTION;
-  }
-  if (params.source === "retry" || params.reason === "retry") {
-    return REASON_PRIORITY.RETRY;
-  }
-  if (
-    params.intent === "scheduled" ||
-    params.source === "interval" ||
-    params.reason === "interval"
-  ) {
-    return REASON_PRIORITY.INTERVAL;
-  }
-  return REASON_PRIORITY.DEFAULT;
-}
-
 function mergePendingWakeReasons(
   previous: PendingWakeReason,
   next: PendingWakeReason,
@@ -195,6 +169,7 @@ function mergePendingWakeReasons(
   );
   const merged: PendingWakeReason = {
     ...preferred,
+    waitersOwnWake: previous.waitersOwnWake === true && next.waitersOwnWake === true,
     enqueueSequence: Math.min(previous.enqueueSequence, next.enqueueSequence),
     readyAtMs,
     ...(!bypassRetainedWork &&
@@ -377,6 +352,7 @@ function queuePendingWakeReason(params: {
   blockTargetUntilMs?: number;
   retainedWork?: boolean;
   settlements?: HeartbeatWakeSettlement[];
+  waitersOwnWake?: boolean;
 }) {
   const settlements = activeHeartbeatWakeSettlements(params.settlements);
   const requestedAt = params.requestedAt ?? performance.now();
@@ -397,7 +373,7 @@ function queuePendingWakeReason(params: {
     source: params.source,
     intent: params.intent,
     reason: normalizedReason,
-    priority: resolveWakePriority({
+    priority: resolveHeartbeatWakePriority({
       source: params.source,
       intent: params.intent,
       reason: normalizedReason,
@@ -414,6 +390,7 @@ function queuePendingWakeReason(params: {
     ...(params.notBeforeMs === undefined ? {} : { notBeforeMs: params.notBeforeMs }),
     ...(params.retainedWork ? { retainedWork: true } : {}),
     ...(settlements.length ? { settlements } : {}),
+    ...(params.waitersOwnWake ? { waitersOwnWake: true } : {}),
   };
   const group = pendingWakes.get(wakeTargetKey) ?? {};
   if (params.blockTargetUntilMs !== undefined) {
@@ -459,6 +436,12 @@ function retryPendingWake(
     deferWakeOnly: false,
   },
 ) {
+  if (
+    pendingWake.waitersOwnWake &&
+    !activeHeartbeatWakeSettlements(pendingWake.settlements).length
+  ) {
+    return;
+  }
   // A thrown or busy wake owns only its target; replaying the whole batch
   // duplicates completed reminders and stalls unrelated agents.
   const retryAtMs = performance.now() + retrySchedule.delayMs;
@@ -478,6 +461,7 @@ function retryPendingWake(
       ? { notBeforeMs: retryAtMs, retainedWork: true }
       : { blockTargetUntilMs: retryAtMs, retainedWork: pendingWake.retainedWork }),
     settlements: pendingWake.settlements,
+    waitersOwnWake: pendingWake.waitersOwnWake,
   });
   schedule(retrySchedule.delayMs);
 }
@@ -503,6 +487,12 @@ async function dispatchPendingWakeGroup(params: {
   const { active, generation, targetKey, wakes, abortSignal } = params;
   try {
     for (const [wakeIndex, pendingWake] of wakes.entries()) {
+      if (
+        pendingWake.waitersOwnWake &&
+        !activeHeartbeatWakeSettlements(pendingWake.settlements).length
+      ) {
+        continue;
+      }
       if (handlerGeneration !== generation) {
         handOffPendingWakeBatch(wakes, wakeIndex);
         return;
@@ -552,6 +542,12 @@ async function dispatchPendingWakeGroup(params: {
         return;
       }
       if (result.status === "skipped" && isRetryableHeartbeatSkipReason(result.reason)) {
+        // Ambient cron ticks recur on their own schedule. Retire only their
+        // waiters on busy; coalesced task/event work still owns its retry.
+        settleHeartbeatWakeSettlements(
+          pendingWake.settlements?.filter((settlement) => !settlement.retryOnBusy),
+          result,
+        );
         retryPendingWake(pendingWake, resolveHeartbeatRetrySchedule(pendingWake, result));
       } else if (
         result.status === "skipped" &&
@@ -769,6 +765,7 @@ function enqueueHeartbeatRequest(
       requestedAt,
       readyAtMs: requestedAt + resolveTimerTimeoutMs(coalesceMs, DEFAULT_COALESCE_MS, 0),
       settlements,
+      waitersOwnWake: settlements?.every((settlement) => !settlement.retryOnBusy),
     });
     schedule(coalesceMs);
   });
