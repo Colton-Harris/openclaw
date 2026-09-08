@@ -4,7 +4,7 @@ import { isCronJobActiveFailure, isCronJobRunning } from "../lib/cron-status.ts"
 import { clampText, formatTimeAgo } from "../lib/format.ts";
 import { isMonitoredAuthProvider, listEffectiveModelAuthProviders } from "../lib/model-auth.ts";
 import type { CustodianAlert } from "./custodian-alert-contract.ts";
-import type { SidebarAttentionItem } from "./sidebar-attention-entries.ts";
+import type { SidebarAttentionItem, SidebarHandoff } from "./sidebar-attention-entries.ts";
 
 // A cron job counts as overdue when its next planned run is this far in the
 // past; mirrors the threshold the Overview attention list used.
@@ -12,8 +12,9 @@ const CRON_OVERDUE_GRACE_MS = 300_000;
 const ALERT_QUESTION_MAX_LENGTH = 1_000;
 const SIDEBAR_ATTENTION_PRIORITY: Record<SidebarAttentionItem["kind"], number> = {
   modelAuthExpired: 0,
-  cronFailed: 1,
-  cronOverdue: 2,
+  handoff: 1,
+  cronFailed: 2,
+  cronOverdue: 3,
 };
 
 export function compareSidebarAttentionEntries(
@@ -30,11 +31,13 @@ type SidebarAttentionContent = Omit<
 
 export function buildSidebarAttentionEntries(params: {
   cronJobs: readonly CronJob[];
+  handoffs?: readonly SidebarHandoff[];
   cronSchedulerEnabled: boolean | null;
   cronOwnerByJobId?: ReadonlyMap<string, string>;
   modelAuthStatus: ModelAuthStatusResult | null;
   modelAuthAgentId?: string | null;
   now: number;
+  handoffError?: string;
 }): SidebarAttentionItem[] {
   const entries: SidebarAttentionItem[] = [];
   const cronJobName = (job: CronJob) => job.name?.trim() || job.id;
@@ -50,9 +53,46 @@ export function buildSidebarAttentionEntries(params: {
     ...item,
     type: "attention",
     category,
-    dismissal: { kind: item.kind, signature: item.signature },
+    dismissal: item.kind === "handoff" ? null : { kind: item.kind, signature: item.signature },
     requiresAction: true,
   });
+  for (const handoff of (params.handoffs ?? [])
+    .filter((item) => !item.acknowledged)
+    .toSorted((left, right) => right.createdAt - left.createdAt)) {
+    const latest = handoff.attempts.at(-1)?.state ?? "generated";
+    const severity =
+      params.handoffError || latest === "failed" || latest === "unknown" ? "error" : "warning";
+    const time = formatTimeAgo(Math.max(0, params.now - handoff.createdAt));
+    entries.push(
+      attentionEntry(
+        {
+          kind: "handoff",
+          severity,
+          icon: "fileText",
+          label: handoff.artifact.label,
+          detail:
+            handoff.summary +
+            " · Artifact: " +
+            handoff.artifact.label +
+            " · Next: " +
+            handoff.nextAction +
+            (handoff.error || params.handoffError
+              ? " · " + (handoff.error ?? params.handoffError)
+              : ""),
+          meta: {
+            context: "Next: " + handoff.nextAction,
+            status: latest,
+            time,
+          },
+          action: { kind: "navigate", routeId: "workboard" },
+          handoff,
+          signature: handoff.id,
+        },
+        "automations",
+      ),
+    );
+  }
+
   const explainedItem = (
     item: Omit<SidebarAttentionContent, "action">,
     alert: Omit<CustodianAlert, "id">,

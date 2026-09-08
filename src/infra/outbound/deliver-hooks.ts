@@ -136,6 +136,7 @@ export async function applyMessageSendingHook(params: {
   replyToId?: string | null;
   threadId?: string | number | null;
   sessionKey?: string;
+  deliveryAttemptId?: string;
 }): Promise<{
   cancelled: boolean;
   cancelReason?: string;
@@ -157,6 +158,7 @@ export async function applyMessageSendingHook(params: {
       {
         to: params.to,
         content: params.payloadSummary.hookContent ?? params.payloadSummary.text,
+        ...(params.deliveryAttemptId ? { deliveryAttemptId: params.deliveryAttemptId } : {}),
         replyToId: params.replyToId ?? undefined,
         threadId: params.threadId ?? undefined,
         metadata: {

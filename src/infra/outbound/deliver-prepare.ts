@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { copyReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 // Finalizes outbound modifying policy before durable queue custody is created.
 import type { ReplyPayload } from "../../auto-reply/types.js";
@@ -179,6 +180,7 @@ export async function prepareOutboundPayloadBatch(
     }
 
     const replyPayload = stripInternalRuntimeScaffoldingFromPayload(replyHookResult.payload);
+    const deliveryAttemptId = `delivery:${randomUUID()}`;
     let messageHookResult: Awaited<ReturnType<typeof applyMessageSendingHook>>;
     try {
       messageHookResult = await applyMessageSendingHook({
@@ -192,6 +194,7 @@ export async function prepareOutboundPayloadBatch(
         replyToId: resolveCurrentReplyTo(replyPayload).replyToId,
         threadId: params.threadId,
         sessionKey: sessionKeyForHooks,
+        deliveryAttemptId,
       });
     } catch (error) {
       // Modifier handlers are fail-open. Only a host invariant failure can
@@ -246,6 +249,7 @@ export async function prepareOutboundPayloadBatch(
     entries.push({
       sourceIndex,
       status: "accepted",
+      deliveryAttemptId,
       payload: compactPayload,
       replyHookChanged: replyHookResult.changed,
       messageHookChanged: messageHookResult.contentRewritten,

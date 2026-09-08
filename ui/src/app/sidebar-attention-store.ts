@@ -25,6 +25,7 @@ export type SidebarAttentionStoreController = {
   readonly entries: readonly SidebarInboxEntry[];
   readonly mentions: MentionsCapability;
   dismiss(dismissal: SidebarAttentionDismissal): void;
+  acknowledgeHandoff(id: string): Promise<void>;
   syncDismissals(): void;
   dispose(): void;
 };
@@ -38,6 +39,7 @@ export type SidebarAttentionStore = {
   readonly entries: readonly SidebarInboxEntry[];
   activate(Controller: SidebarAttentionStoreControllerConstructor): MentionsCapability;
   dismiss(dismissal: SidebarAttentionDismissal): void;
+  acknowledgeHandoff(id: string): Promise<void>;
   subscribe(listener: () => void): () => void;
   dispose(): void;
 };
@@ -78,6 +80,9 @@ export function createSidebarAttentionStore(
     },
     dismiss(dismissal) {
       controller?.dismiss(dismissal);
+    },
+    acknowledgeHandoff(id) {
+      return controller?.acknowledgeHandoff(id) ?? Promise.resolve();
     },
     subscribe(listener) {
       listeners.add(listener);

@@ -5,6 +5,7 @@ import type { AnyAgentTool, OpenClawPluginToolContext } from "openclaw/plugin-sd
 import { safeEqualSecret } from "openclaw/plugin-sdk/security-runtime";
 import { Type } from "typebox";
 import { redactClaimToken } from "./card-redaction.js";
+import type { HandoffMessageContext, HandoffRecipient, HandoffService } from "./handoff.js";
 import type { WorkboardStore } from "./store.js";
 import {
   cardIdField,
@@ -131,6 +132,52 @@ type WorkboardCardMutation = (
 
 const ScopedClaimTokenField = claimTokenField("Claim token for claimed cards.");
 
+function trustedHandoffRecipient(ctx: OpenClawPluginToolContext | undefined): HandoffRecipient {
+  const record = (ctx ?? {}) as Record<string, unknown>;
+  const delivery = (record.deliveryContext ?? {}) as Record<string, unknown>;
+  return {
+    channel:
+      typeof delivery.channel === "string"
+        ? delivery.channel
+        : typeof record.messageChannel === "string"
+          ? record.messageChannel
+          : undefined,
+    accountId:
+      typeof delivery.accountId === "string"
+        ? delivery.accountId
+        : typeof record.agentAccountId === "string"
+          ? record.agentAccountId
+          : undefined,
+    to: typeof delivery.to === "string" ? delivery.to : undefined,
+    threadId:
+      typeof delivery.threadId === "string" || typeof delivery.threadId === "number"
+        ? delivery.threadId
+        : undefined,
+    sessionKey: typeof record.sessionKey === "string" ? record.sessionKey : undefined,
+  };
+}
+function requireTrustedHandoffProfile(ctx: OpenClawPluginToolContext | undefined): string {
+  const profileId = ctx?.authenticatedUserProfileId?.trim();
+  if (!profileId) {
+    throw new Error("authenticated user profile binding is required for handoff tools.");
+  }
+  return profileId;
+}
+
+function trustedHandoffContext(ctx: OpenClawPluginToolContext | undefined): HandoffMessageContext {
+  const recipient = trustedHandoffRecipient(ctx);
+  if (!recipient.channel || !recipient.to) {
+    throw new Error("trusted delivery route requires channel and to.");
+  }
+  return {
+    channelId: recipient.channel,
+    accountId: recipient.accountId,
+    conversationId: recipient.conversationId,
+    to: recipient.to,
+    threadId: recipient.threadId,
+    sessionKey: recipient.sessionKey,
+  };
+}
 function readCardToolParams(rawParams: unknown, ownerId: string): WorkboardToolCardParams {
   const record = rawParams as Record<string, unknown>;
   const id = readStringParam(record, "id", { required: true });
@@ -169,8 +216,9 @@ const CardIdSchema = strictObject({
 export function createWorkboardTools(params: {
   context?: OpenClawPluginToolContext;
   store: WorkboardStore;
+  handoffs?: HandoffService;
 }): AnyAgentTool[] {
-  const { store } = params;
+  const { store, handoffs } = params;
   const ownerId = contextOwner(params.context);
   const readScopedCardToolParams = async (rawParams: unknown): Promise<WorkboardToolCardParams> => {
     const input = readCardToolParams(rawParams, ownerId);
@@ -552,6 +600,101 @@ export function createWorkboardTools(params: {
         return redactedCardResult(await store.unblock(id, scope));
       },
     },
+    ...(handoffs
+      ? [
+          {
+            name: "workboard_handoff_create",
+            label: "Workboard Handoff Create",
+            description:
+              "Persist an exact artifact and next action for trusted delivery acknowledgment.",
+            parameters: strictObject({
+              summary: Type.String({ description: "Exact handoff summary." }),
+              artifact: strictObject({
+                label: Type.String({ description: "Artifact label." }),
+                url: Type.Optional(Type.String()),
+                path: Type.Optional(Type.String()),
+                mimeType: Type.Optional(Type.String()),
+              }),
+              nextAction: Type.String({ description: "The next action that remains." }),
+              deliveryText: Type.String({
+                description: "Exact outbound text used for delivery correlation.",
+              }),
+              idempotencyKey: Type.Optional(Type.String()),
+            }),
+            execute: async (_toolCallId: string, rawParams: unknown) => {
+              const record = rawParams as Record<string, unknown>;
+              const ownerProfileId = requireTrustedHandoffProfile(params.context);
+              return jsonResult({
+                handoff: await handoffs.create({
+                  summary: record.summary as string,
+                  artifact: record.artifact as {
+                    label: string;
+                    url?: string;
+                    path?: string;
+                    mimeType?: string;
+                  },
+                  nextAction: record.nextAction as string,
+                  deliveryText: record.deliveryText as string,
+                  recipient: trustedHandoffRecipient(params.context),
+                  ownerProfileId,
+                  idempotencyKey:
+                    typeof record.idempotencyKey === "string" ? record.idempotencyKey : undefined,
+                }),
+              });
+            },
+          },
+          {
+            name: "workboard_handoff_list",
+            label: "Workboard Handoff List",
+            description: "List durable handoffs scoped to this trusted delivery context.",
+            parameters: strictObject({}),
+            execute: async () => {
+              const ownerProfileId = requireTrustedHandoffProfile(params.context);
+              const route = trustedHandoffContext(params.context);
+              return jsonResult({
+                handoffs: (await handoffs.listForProfile(ownerProfileId)).filter(
+                  (handoff) =>
+                    handoff.recipient.channel === route.channelId &&
+                    handoff.recipient.to === route.to &&
+                    (route.accountId === undefined ||
+                      handoff.recipient.accountId === route.accountId) &&
+                    (route.sessionKey === undefined ||
+                      handoff.recipient.sessionKey === route.sessionKey) &&
+                    (route.threadId === undefined || handoff.recipient.threadId === route.threadId),
+                ),
+              });
+            },
+          },
+          {
+            name: "workboard_handoff_acknowledge",
+            label: "Workboard Handoff Acknowledge",
+            description: "Acknowledge receipt only; this does not approve a product decision.",
+            parameters: strictObject({ id: Type.String({ description: "Handoff id." }) }),
+            execute: async (_toolCallId: string, rawParams: unknown) => {
+              const ownerProfileId = requireTrustedHandoffProfile(params.context);
+              const id = (rawParams as Record<string, unknown>).id as string;
+              const route = trustedHandoffContext(params.context);
+              const visible = (await handoffs.listForProfile(ownerProfileId)).find(
+                (handoff) =>
+                  handoff.id === id &&
+                  handoff.recipient.channel === route.channelId &&
+                  handoff.recipient.to === route.to &&
+                  (route.accountId === undefined ||
+                    handoff.recipient.accountId === route.accountId) &&
+                  (route.sessionKey === undefined ||
+                    handoff.recipient.sessionKey === route.sessionKey) &&
+                  (route.threadId === undefined || handoff.recipient.threadId === route.threadId),
+              );
+              if (!visible) {
+                throw new Error("handoff not found.");
+              }
+              return jsonResult({
+                handoff: await handoffs.acknowledgeForContext(id, route),
+              });
+            },
+          },
+        ]
+      : []),
     createWorkboardMoveTool({ store, readScopedCardToolParams, redactedCardResult }),
     ...createWorkboardOrchestrationTools({
       store,

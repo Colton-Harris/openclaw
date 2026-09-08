@@ -99,6 +99,10 @@ export function renderSidebarAttentionPanel(params: SidebarAttentionPanelParams)
         return renderSidebarIssueItem(entry, {
           basePath: params.context.basePath,
           onDismiss,
+          onAcknowledge:
+            entry.kind === "handoff"
+              ? (id) => void params.context.sidebarAttention.acknowledgeHandoff(id)
+              : undefined,
           onNavigate: params.onNavigate,
           onOpen: params.onOpen,
         });

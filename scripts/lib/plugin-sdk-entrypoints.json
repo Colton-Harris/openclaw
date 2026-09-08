@@ -71,6 +71,7 @@
   "heartbeat-runtime",
   "expect-runtime",
   "number-runtime",
+  "notification-preferences-runtime",
   "secure-random-runtime",
   "system-event-runtime",
   "transport-ready-runtime",

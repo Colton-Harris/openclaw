@@ -96,6 +96,10 @@
       "types": "./dist/src/plugin-sdk/node-selection-runtime.d.ts",
       "default": "./src/node-selection-runtime.ts"
     },
+    "./notification-preferences-runtime": {
+      "types": "./dist/src/plugin-sdk/notification-preferences-runtime.d.ts",
+      "default": "./src/notification-preferences-runtime.ts"
+    },
     "./number-runtime": {
       "types": "./dist/src/plugin-sdk/number-runtime.d.ts",
       "default": "./src/number-runtime.ts"

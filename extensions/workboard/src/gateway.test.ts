@@ -1,7 +1,12 @@
 // Workboard tests cover gateway plugin behavior.
+import {
+  createPluginStateKeyedStoreForTests,
+  resetPluginStateStoreForTests,
+} from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginApi } from "../api.js";
 import { registerWorkboardGatewayMethods } from "./gateway.js";
+import { createHandoffService, type HandoffRecord } from "./handoff.js";
 import type { PersistedWorkboardCard, WorkboardKeyedStore } from "./persistence-types.js";
 import { WorkboardStore } from "./store.js";
 
@@ -771,6 +776,95 @@ describe("workboard gateway methods", () => {
     } as never);
     expect(blockRespond.mock.calls[0]?.[1]).toMatchObject({
       card: { status: "blocked" },
+    });
+  });
+
+  it("keeps handoff gateway reads and acknowledgments profile-scoped", async () => {
+    resetPluginStateStoreForTests();
+    const handoffStore = createPluginStateKeyedStoreForTests<HandoffRecord>(
+      "workboard-gateway-handoff-test",
+      {
+        namespace: "gateway-handoffs",
+        maxEntries: 100,
+        overflowPolicy: "reject-new",
+      },
+    );
+    const handoffs = createHandoffService({ store: handoffStore, now: () => 100 });
+    type RegisteredMethod = {
+      handler: Parameters<OpenClawPluginApi["registerGatewayMethod"]>[1];
+      opts: Parameters<OpenClawPluginApi["registerGatewayMethod"]>[2];
+    };
+    const methods = new Map<string, RegisteredMethod>();
+    const api = {
+      runtime: { state: { openKeyedStore: vi.fn() } },
+      registerGatewayMethod: vi.fn(
+        (method: string, handler: RegisteredMethod["handler"], opts: RegisteredMethod["opts"]) => {
+          methods.set(method, { handler, opts });
+        },
+      ),
+    } as unknown as OpenClawPluginApi;
+    registerWorkboardGatewayMethods({
+      api,
+      store: new WorkboardStore(createMemoryStore()),
+      handoffs,
+    });
+    const input = {
+      summary: "Ready candidate",
+      artifact: { label: "diff", path: "/tmp/diff" },
+      nextAction: "Review candidate",
+      deliveryText: "Ready candidate",
+      recipient: { channel: "telegram", accountId: "owner", to: "founder" },
+      idempotencyKey: "same-key",
+    };
+    const createFor = async (profileId: string) => {
+      const respond = vi.fn();
+      await methods.get("workboard.handoffs.create")?.handler({
+        client: { authenticatedUserProfile: { profileId } },
+        params: input,
+        respond,
+      } as never);
+      expect(respond).toHaveBeenCalledWith(
+        true,
+        expect.objectContaining({ handoff: expect.anything() }),
+      );
+      return { id: respond.mock.calls[0]?.[1]?.handoff.id as string, respond };
+    };
+    const first = await createFor("profile-1");
+    const second = await createFor("profile-2");
+    expect(second.id).not.toBe(first.id);
+
+    const listTwo = vi.fn();
+    await methods.get("workboard.handoffs.list")?.handler({
+      client: { authenticatedUserProfile: { profileId: "profile-2" } },
+      params: {},
+      respond: listTwo,
+    } as never);
+    expect(listTwo.mock.calls[0]?.[1]?.handoffs).toEqual([
+      expect.objectContaining({ id: second.id }),
+    ]);
+    expect(listTwo.mock.calls[0]?.[1]?.handoffs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: first.id })]),
+    );
+
+    const crossAck = vi.fn();
+    await methods.get("workboard.handoffs.acknowledge")?.handler({
+      client: { authenticatedUserProfile: { profileId: "profile-2" } },
+      params: { id: first.id },
+      respond: crossAck,
+    } as never);
+    expect(crossAck.mock.calls[0]?.[0]).toBe(false);
+    expect(crossAck.mock.calls[0]?.[2]?.message).toBe("handoff not found.");
+
+    const ownAck = vi.fn();
+    await methods.get("workboard.handoffs.acknowledge")?.handler({
+      client: { authenticatedUserProfile: { profileId: "profile-1" } },
+      params: { id: first.id },
+      respond: ownAck,
+    } as never);
+    expect(ownAck.mock.calls[0]?.[0]).toBe(true);
+    expect(ownAck.mock.calls[0]?.[1]?.handoff).toMatchObject({
+      id: first.id,
+      acknowledged: { kind: "gateway" },
     });
   });
 });

@@ -195,6 +195,8 @@ type OpenClawCodingToolsOptions = {
   clientCaps?: string[];
   /** Out-of-band plugin bindings attached by the run initiator. */
   toolBindings?: Readonly<Record<string, unknown>>;
+  /** Host-authenticated Gateway profile for profile-scoped plugin state. */
+  authenticatedUserProfileId?: string;
   /** Trusted runtime-only authorization for one bounded cross-conversation recall pass. */
   conversationRecall?: ConversationRecallContext;
   /** Normalized conversation kind when the caller already has channel metadata. */
@@ -795,6 +797,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             allowGatewaySubagentBinding: options?.allowGatewaySubagentBinding,
             clientCaps: options?.clientCaps,
             toolBindings: options?.toolBindings,
+            authenticatedUserProfileId: options?.authenticatedUserProfileId,
             authProfileStore: options?.authProfileStore,
           },
           resolvedConfig: options?.config,

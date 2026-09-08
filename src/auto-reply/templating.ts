@@ -376,6 +376,8 @@ export type MsgContext = Partial<CanonicalInboundText> & {
   GatewayClientCaps?: string[];
   /** Run-scoped plugin tool bindings; never rendered into prompt text. */
   GatewayRunToolBindings?: Readonly<Record<string, unknown>>;
+  /** Gateway-authenticated profile for profile-scoped plugin state. */
+  GatewayAuthenticatedUserProfileId?: string;
   /** Gateway device id allowed to review approvals initiated by this turn. */
   ApprovalReviewerDeviceId?: string;
   /** Thread identifier (Telegram topic id or Matrix thread event id). */

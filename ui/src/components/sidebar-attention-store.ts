@@ -22,6 +22,7 @@ import {
   buildSidebarInboxEntries,
   buildUpdateInboxEntry,
   type SidebarInboxEntry,
+  type SidebarHandoff,
 } from "./sidebar-attention-entries.ts";
 import {
   buildSidebarAttentionEntries,
@@ -40,6 +41,8 @@ const IDLE_REFRESH_INTERVAL_MS = 10 * 60_000;
 export class SidebarAttentionStoreController implements StoreController {
   readonly mentions: MentionsCapability;
   private cronJobs: CronJob[] = [];
+  private handoffs: SidebarHandoff[] = [];
+  private handoffError: string | null = null;
   private cronSchedulerEnabled: boolean | null = null;
   private modelAuthStatus: ModelAuthStatusResult | null = null;
   private modelAuthAgentId: string | null = null;
@@ -72,7 +75,7 @@ export class SidebarAttentionStoreController implements StoreController {
     this.loadedClient = null;
     this.stopGateway = sources.gateway.subscribe(() => this.synchronizeGateway());
     this.stopEvents = sources.gateway.subscribeEvents((event) => {
-      if (event.event === "cron") {
+      if (event.event === "cron" || event.event === "plugin.workboard.handoff") {
         this.load(false);
       }
     });
@@ -107,6 +110,8 @@ export class SidebarAttentionStoreController implements StoreController {
 
   private clearHealth(): void {
     this.cronJobs = [];
+    this.handoffs = [];
+    this.handoffError = null;
     this.cronSchedulerEnabled = null;
     this.modelAuthStatus = null;
     this.modelAuthAgentId = null;
@@ -151,6 +156,8 @@ export class SidebarAttentionStoreController implements StoreController {
     });
     const attention = buildSidebarAttentionEntries({
       cronJobs: this.cronJobs,
+      handoffs: this.handoffs,
+      handoffError: this.handoffError ?? undefined,
       cronSchedulerEnabled: this.cronSchedulerEnabled,
       cronOwnerByJobId: this.cronOwnerByJobId(),
       modelAuthStatus: this.modelAuthStatus,
@@ -214,6 +221,55 @@ export class SidebarAttentionStoreController implements StoreController {
       this.reconcileDismissals(scope);
       this.onChange();
     };
+    const handoffMethods = gateway.hello?.features?.methods;
+    if (handoffMethods?.includes("workboard.handoffs.list")) {
+      try {
+        void Promise.resolve(client.request("workboard.handoffs.reminders.claim", {})).catch(
+          () => undefined,
+        );
+      } catch {
+        // Older gateways do not expose the optional reminder claim method.
+      }
+      try {
+        void Promise.resolve(client.request("workboard.handoffs.list", {}))
+          .then((response) => {
+            if (!current()) {
+              return;
+            }
+            const rows = (response as { handoffs?: unknown }).handoffs;
+            this.handoffError = null;
+            this.handoffs = Array.isArray(rows)
+              ? rows.filter((row): row is SidebarHandoff => {
+                  if (!row || typeof row !== "object") {
+                    return false;
+                  }
+                  const value = row as Record<string, unknown>;
+                  return (
+                    typeof value.id === "string" &&
+                    typeof value.createdAt === "number" &&
+                    typeof value.summary === "string" &&
+                    typeof value.nextAction === "string" &&
+                    Boolean(value.artifact) &&
+                    typeof value.artifact === "object" &&
+                    typeof (value.artifact as Record<string, unknown>).label === "string" &&
+                    Array.isArray(value.attempts)
+                  );
+                })
+              : [];
+            this.onChange();
+          })
+          .catch(() => {
+            if (current()) {
+              // Keep the last scoped result visible. A transient RPC failure must
+              // never turn an unresolved receipt into an apparent disappearance.
+              this.handoffError = "Handoff state is stale; refresh failed.";
+              this.onChange();
+            }
+          });
+      } catch {
+        // Older gateways without the handoff method leave other Inbox sources live.
+      }
+    }
     if (this.cronRefresh?.generation === generation) {
       this.cronRefresh.requested = true;
     } else {
@@ -290,6 +346,27 @@ export class SidebarAttentionStoreController implements StoreController {
       this.modelAuthAgentId = null;
     }
   }
+
+  acknowledgeHandoff = async (id: string): Promise<void> => {
+    const client = this.sources.gateway.snapshot.client;
+    const owner = this.owner();
+    if (!client || this.sources.gateway.snapshot.phase !== "connected" || !owner.profileId) {
+      this.handoffError = "A signed-in profile is required to acknowledge this receipt.";
+      this.onChange();
+      return;
+    }
+    try {
+      await client.request("workboard.handoffs.acknowledge", { id });
+      this.handoffs = this.handoffs.map((handoff) =>
+        handoff.id === id ? { ...handoff, acknowledged: { kind: "gateway" } } : handoff,
+      );
+      this.handoffError = null;
+      this.onChange();
+    } catch {
+      this.handoffError = "Receipt acknowledgment failed; the handoff remains unresolved.";
+      this.onChange();
+    }
+  };
 
   private synchronizeGateway(): void {
     const snapshot = this.sources.gateway.snapshot;

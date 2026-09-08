@@ -24,6 +24,7 @@ const unavailableMentionsCapability = {
 const emptySidebarAttentionStore = {
   entries: [],
   activate: () => unavailableMentionsCapability,
+  acknowledgeHandoff: async () => undefined,
   dismiss: () => undefined,
   subscribe: () => () => undefined,
   dispose: () => undefined,

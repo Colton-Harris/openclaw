@@ -22,6 +22,7 @@ import "./viewer-facepile.ts";
 type SidebarIssueItemHandlers = {
   basePath: string;
   onDismiss?: () => void;
+  onAcknowledge?: (id: string) => void;
   onNavigate: (routeId: NavigationRouteId) => void;
   onOpen: (item: SidebarAttentionItem) => void;
 };
@@ -339,6 +340,55 @@ function renderItemMeta(item: SidebarAttentionItem) {
 }
 
 function renderNavigationItem(item: SidebarAttentionItem, handlers: SidebarIssueItemHandlers) {
+  if (item.kind === "handoff" && item.handoff) {
+    const handoff = item.handoff;
+    const artifactLabel = handoff.artifact.path
+      ? handoff.artifact.label + " (" + handoff.artifact.path + ")"
+      : handoff.artifact.label;
+    return html`<details
+      class="sidebar-issues-panel__details sidebar-issues-panel__details--${item.severity}"
+      data-attention-kind="handoff"
+    >
+      <summary class="sidebar-issues-panel__summary" data-issue-row-focus>
+        <span class="sidebar-issues-panel__icon" aria-hidden="true">${icons[item.icon]}</span>
+        <span class="sidebar-issues-panel__content">
+          <span class="sidebar-issues-panel__entity" title=${item.label}>${item.label}</span>
+          ${renderItemMeta(item)}
+        </span>
+        <span class="sidebar-issues-panel__chevron" aria-hidden="true">${icons.chevronRight}</span>
+      </summary>
+      <div class="sidebar-issues-panel__body">
+        <div>${handoff.summary}</div>
+        <div>
+          <strong>Artifact:</strong>
+          ${
+            handoff.artifact.url
+              ? html`<a href=${handoff.artifact.url} target="_blank" rel="noreferrer"
+                  >${artifactLabel}</a
+                >`
+              : artifactLabel
+          }
+        </div>
+        <div><strong>Next action:</strong> ${handoff.nextAction}</div>
+        <div class="sidebar-issues-panel__actions">
+          <button
+            type="button"
+            class="sidebar-issues-panel__action sidebar-issues-panel__action--primary"
+            @click=${() => handlers.onAcknowledge?.(handoff.id)}
+          >
+            Acknowledge receipt
+          </button>
+          <button
+            type="button"
+            class="sidebar-issues-panel__action"
+            @click=${() => handlers.onNavigate("workboard")}
+          >
+            Open Workboard
+          </button>
+        </div>
+      </div>
+    </details>`;
+  }
   if (item.action.kind !== "navigate") {
     return nothing;
   }

@@ -7,6 +7,7 @@ import {
   buildUpdateInboxEntry,
   sidebarInboxTabCounts,
 } from "./sidebar-attention-entries.ts";
+import type { SidebarHandoff } from "./sidebar-attention-entries.ts";
 import { buildSidebarAttentionEntries } from "./sidebar-attention-items.ts";
 
 function cronJob(id: string): CronJob {
@@ -107,6 +108,35 @@ describe("automation attention", () => {
     })[0];
 
     expect(item?.meta?.context).toBe("Writer");
+  });
+
+  it("projects unresolved handoffs with their artifact and next action", () => {
+    const handoff: SidebarHandoff = {
+      id: "handoff-1",
+      createdAt: 100,
+      summary: "Candidate is ready.",
+      artifact: { label: "candidate diff" },
+      nextAction: "Parent reviews and activates.",
+      attempts: [{ state: "unknown" }],
+    };
+    const [item] = buildSidebarAttentionEntries({
+      cronJobs: [],
+      handoffs: [handoff],
+      cronSchedulerEnabled: true,
+      modelAuthStatus: null,
+      now: 200,
+    });
+
+    expect(item).toMatchObject({
+      kind: "handoff",
+      severity: "error",
+      label: "candidate diff",
+      detail:
+        "Candidate is ready. · Artifact: candidate diff · Next: Parent reviews and activates.",
+      action: { kind: "navigate", routeId: "workboard" },
+      dismissal: null,
+      handoff,
+    });
   });
 
   it("orders failed before overdue and newest first within each group", () => {

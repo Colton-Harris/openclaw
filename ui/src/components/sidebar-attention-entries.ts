@@ -13,6 +13,17 @@ import type { IssueTab } from "./sidebar-issues-tabs.ts";
 
 type SidebarAttentionItemKind = Exclude<SidebarAttentionKind, "scopeUpgrade" | "updateAvailable">;
 
+export type SidebarHandoff = {
+  id: string;
+  createdAt: number;
+  summary: string;
+  artifact: { label: string; url?: string; path?: string; mimeType?: string };
+  nextAction: string;
+  attempts: readonly { state: "attempted" | "delivered" | "failed" | "unknown" }[];
+  acknowledged?: unknown;
+  error?: string;
+};
+
 type SidebarInboxEntryBase<
   Category extends Exclude<IssueTab, "all">,
   Severity extends "error" | "warning" | "neutral" = "error" | "warning",
@@ -35,6 +46,7 @@ export type SidebarAttentionItem = SidebarInboxEntryBase<"automations" | "system
     | { kind: "askCustodian"; alert: CustodianAlert };
   inlineAction?: { label: string; routeId: NavigationRouteId };
   signature: string;
+  handoff?: SidebarHandoff;
 };
 
 export type SidebarInboxEntry =
