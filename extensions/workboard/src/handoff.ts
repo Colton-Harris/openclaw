@@ -199,6 +199,26 @@ function routeMatchesProvided(
   return actualTarget === undefined || recipient.to === actualTarget;
 }
 
+function routeMatchesReceived(
+  recipient: HandoffRecipient,
+  message: HandoffMessageReceived,
+): boolean {
+  for (const [expected, actual] of [
+    [recipient.channel, message.channelId],
+    [recipient.accountId, message.accountId],
+    [recipient.conversationId, message.conversationId],
+    [recipient.sessionKey, message.sessionKey],
+    [recipient.threadId, message.threadId],
+  ]) {
+    if (expected !== undefined && expected !== actual) {
+      return false;
+    }
+  }
+  // On an inbound message, from is the trusted peer that received the handoff.
+  // to is the bot/operator destination and must not replace it.
+  return recipient.to === undefined || recipient.to === (message.from ?? message.to);
+}
+
 function routeMatches(
   recipient: HandoffRecipient,
   message: HandoffMessageContext & { to?: string; from?: string },
@@ -408,7 +428,7 @@ export function createHandoffService(params: {
       return;
     }
     const records = (await listAll())
-      .filter((record) => !record.acknowledged && routeMatchesProvided(record.recipient, event))
+      .filter((record) => !record.acknowledged && routeMatchesReceived(record.recipient, event))
       .toSorted((left, right) => right.createdAt - left.createdAt);
     const replyTo = event.replyToIdFull ?? event.replyToId;
     for (const record of records) {

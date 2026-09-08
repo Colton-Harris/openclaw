@@ -152,6 +152,35 @@ describe("durable founder handoffs", () => {
     ).toMatchObject({ kind: "reply", messageId: "msg-ack" });
   });
 
+  it("matches inbound acknowledgments by trusted sender when destination is also present", async () => {
+    const { service } = setup();
+    const record = await service.create(createInput);
+    const message = {
+      channelId: "telegram",
+      accountId: "owner",
+      conversationId: "founder",
+      sessionKey: "agent:main:main",
+      to: "founder",
+      content: createInput.deliveryText,
+      deliveryAttemptId: "attempt-inbound-route",
+    };
+    await service.markAttempted(message);
+    await service.markSent({ ...message, success: true, messageId: "msg-inbound-route" });
+    await service.markReceived({
+      channelId: "telegram",
+      accountId: "owner",
+      conversationId: "founder",
+      sessionKey: "agent:main:main",
+      from: "founder",
+      to: "operator-bot",
+      content: "Thanks, I see it.",
+      replyToId: "msg-inbound-route",
+    });
+    expect(
+      (await service.listAll()).find((row) => row.id === record.id)?.acknowledged,
+    ).toMatchObject({ kind: "reply", messageId: "msg-inbound-route" });
+  });
+
   it("rejects acknowledgment from a different trusted route", async () => {
     const { service } = setup();
     const record = await service.create(createInput);
