@@ -2,6 +2,7 @@ import type { HeartbeatRunResult } from "./heartbeat-wake-contracts.js";
 
 export type HeartbeatWakeSettlement = {
   active: boolean;
+  retryOnBusy: boolean;
   settle: (result: HeartbeatRunResult) => void;
 };
 
@@ -20,10 +21,14 @@ export function settleHeartbeatWakeSettlements(
   }
 }
 
-function createHeartbeatWakeSettlement(abortSignal?: AbortSignal): {
+function createHeartbeatWakeSettlement(lifecycle?: {
+  abortSignal?: AbortSignal;
+  retryOnBusy?: boolean;
+}): {
   result: Promise<HeartbeatRunResult>;
   settlement: HeartbeatWakeSettlement;
 } {
+  const abortSignal = lifecycle?.abortSignal;
   const control: {
     resolve?: (result: HeartbeatRunResult) => void;
     removeAbortListener?: () => void;
@@ -33,6 +38,7 @@ function createHeartbeatWakeSettlement(abortSignal?: AbortSignal): {
   });
   const settlement: HeartbeatWakeSettlement = {
     active: true,
+    retryOnBusy: lifecycle?.retryOnBusy !== false,
     settle: (outcome) => {
       if (!settlement.active) {
         return;
@@ -55,8 +61,8 @@ function createHeartbeatWakeSettlement(abortSignal?: AbortSignal): {
 export function createRequestHeartbeatAndWait<Request>(
   enqueue: (request: Request, settlements?: HeartbeatWakeSettlement[]) => void,
 ) {
-  return (request: Request, lifecycle?: { abortSignal?: AbortSignal }) => {
-    const pending = createHeartbeatWakeSettlement(lifecycle?.abortSignal);
+  return (request: Request, lifecycle?: { abortSignal?: AbortSignal; retryOnBusy?: boolean }) => {
+    const pending = createHeartbeatWakeSettlement(lifecycle);
     if (pending.settlement.active) {
       enqueue(request, [pending.settlement]);
     }

@@ -214,10 +214,10 @@ export async function executeJobCore(
     );
     let heartbeatResult: HeartbeatRunResult;
     try {
-      heartbeatResult = await (state.deps.requestHeartbeatAndWait?.(
-        heartbeatWake,
-        abortSignal ? { abortSignal } : {},
-      ) ?? { status: "failed", reason: "heartbeat wake settlement unavailable" });
+      heartbeatResult = await (state.deps.requestHeartbeatAndWait?.(heartbeatWake, {
+        abortSignal,
+        retryOnBusy: Boolean(heartbeatTask),
+      }) ?? { status: "failed", reason: "heartbeat wake settlement unavailable" });
     } finally {
       releaseHeartbeatWait();
     }
