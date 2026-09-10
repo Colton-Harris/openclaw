@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runTasksWithConcurrency } from "openclaw/plugin-sdk/concurrency-runtime";
@@ -33,6 +34,8 @@ import type { ClaudeSessionCatalogSession } from "./session-catalog-types.js";
 const MAX_CATALOG_DISCOVERY_FILES = 10_000;
 const MAX_CATALOG_DISCOVERY_CACHE_ENTRIES = 20_000;
 const MAX_CLAUDE_SESSION_SCAN_CACHE_ENTRIES = 8;
+// Match native prefix discovery's bound independently of optional title/color tails.
+const MAX_CATALOG_DISCOVERY_SCAN_BYTES = 64 * 1024 * 1024;
 const MAX_CATALOG_METADATA_SCAN_BYTES = 64 * 1024 * 1024;
 const CLI_ENTRYPOINTS = new Set(["cli", "sdk-cli"]);
 
@@ -40,18 +43,19 @@ type CatalogDiscoveryCacheEntry = {
   // The module-global cache is keyed by canonical transcript path, so an entry must also record the
   // discovery context it was built in. `root` is the logical (unresolved) projects root: it scopes
   // the entry to its homeDir even when the root itself is a symlink, so a different homeDir scan
-  // cannot reuse it and eviction can find it without re-resolving a now-missing root. mtime+size+ino
+  // cannot reuse it and eviction can find it without re-resolving a now-missing root. mtime+ctime+size+ino
   // detect any content change or atomic replacement; sessionId guards against a canonical path being
   // reached under a different filename-derived id (e.g. an aliased/renamed symlink).
   root: string;
   mtimeMs: number;
+  ctimeMs: number;
   size: number;
   ino: number;
   sessionId: string;
-  // Bytes this file charged against the scan budget when first scanned. Cache hits re-charge it so
-  // byte-budget-limited discovery stops at the same frontier whether or not the cache is warm,
-  // keeping pagination deterministic across repeated identical calls.
+  // Prefix and enrichment bytes charged when first scanned. Cache hits re-charge both independent
+  // budgets so byte frontiers and pagination stay deterministic across cold and warm scans.
   scannedBytes: number;
+  metadataBytes: number;
   record: CatalogRecord | null;
   metadata: Pick<ClaudeSessionCatalogSession, "name" | "color">;
   sidechain: boolean;
@@ -63,7 +67,7 @@ type ClaudeSessionScanCacheEntry = {
   records: Promise<ClaudeCliScan>;
 };
 
-// Transcript discoveries stay valid only for the same root/id/inode/mtime/size and are LRU-bounded;
+// Transcript discoveries stay valid only for the same root/id/inode/mtime/ctime/size and are LRU-bounded;
 // a false hit would corrupt pagination, so warm scans re-charge the original deterministic byte cost.
 const catalogDiscoveryCache = new Map<string, CatalogDiscoveryCacheEntry>();
 // CLI scans are root-scoped and bounded; Desktop overlay expiry never invalidates their records.
@@ -108,6 +112,17 @@ type SessionIndexEntry = {
 export type CatalogRecord = ClaudeSessionCatalogSession & {
   filePath: string;
 };
+
+function sourceRevision(file: {
+  ino: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  size: number;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify([file.ino, file.mtimeMs, file.ctimeMs, file.size]))
+    .digest("hex");
+}
 
 function isCliEntrypoint(value: unknown): value is string {
   return typeof value === "string" && CLI_ENTRYPOINTS.has(value);
@@ -175,6 +190,7 @@ async function readIndexRecords(context: ClaudeSessionScanContext) {
       const firstPrompt = readBoundedString(entry.firstPrompt, 500);
       records.set(sessionId, {
         threadId: sessionId,
+        sourceRevision: sourceRevision(safeFile),
         name: summary ?? firstPrompt ?? null,
         cwd: readBoundedString(entry.projectPath, MAX_STRING_LENGTH),
         status: "stored",
@@ -193,10 +209,7 @@ async function readIndexRecords(context: ClaudeSessionScanContext) {
   return { records, sidechainIds };
 }
 
-async function locateSessionFile(
-  context: ClaudeSessionScanContext,
-  sessionId: string,
-): Promise<string | undefined> {
+async function locateSessionFile(context: ClaudeSessionScanContext, sessionId: string) {
   const fileName = `${sessionId}.jsonl`;
   for (const { directory, childNames } of context.projectDirectories) {
     if (!childNames.includes(fileName)) {
@@ -205,7 +218,7 @@ async function locateSessionFile(
     const candidate = path.join(directory, fileName);
     const safeFile = await safeSessionFileForScan(context, candidate, sessionId);
     if (safeFile) {
-      return safeFile.filePath;
+      return safeFile;
     }
   }
   return undefined;
@@ -229,6 +242,7 @@ async function discoverCliRecords(
   }
   let discoveredFiles = 0;
   let scannedBytes = 0;
+  let metadataBytes = 0;
   let truncated = false;
   const seenFilePaths = new Set<string>();
   const pendingIndexedFiles = new Set([...records.values()].map((record) => record.filePath));
@@ -266,7 +280,7 @@ async function discoverCliRecords(
     }
     seenFilePaths.add(filePath);
     const cached = catalogDiscoveryCache.get(filePath);
-    // Claude transcripts only append while active, then stay static, so mtime+size+ino identify
+    // Claude transcripts only append while active, then stay static, so mtime+ctime+size+ino identify
     // the parsed content (ino also rejects an atomic replacement that reused the same mtime/size),
     // and sessionId ensures the record is served only under the filename-derived id it was built
     // for. These files are owner-owned and append-only; a mid-scan read-permission revocation is
@@ -275,6 +289,7 @@ async function discoverCliRecords(
       cached &&
       cached.root === root &&
       cached.mtimeMs === fileStat.mtimeMs &&
+      cached.ctimeMs === fileStat.ctimeMs &&
       cached.size === fileStat.size &&
       cached.ino === fileStat.ino &&
       cached.sessionId === sessionId &&
@@ -282,7 +297,8 @@ async function discoverCliRecords(
       // current remaining byte budget. Once earlier files grow, replaying a record whose original
       // scan cost now crosses the frontier would surface a record a cold scan stops before; fall
       // through to a bounded rescan instead so warm and cold discovery (and pagination) match.
-      scannedBytes + cached.scannedBytes <= MAX_CATALOG_METADATA_SCAN_BYTES
+      scannedBytes + cached.scannedBytes <= MAX_CATALOG_DISCOVERY_SCAN_BYTES &&
+      metadataBytes + cached.metadataBytes <= MAX_CATALOG_METADATA_SCAN_BYTES
     ) {
       if (cached.sidechain) {
         sidechainIds.add(sessionId);
@@ -292,7 +308,8 @@ async function discoverCliRecords(
       // so the byte-budget cutoff matches a cold scan; otherwise repeated calls would free budget
       // and progressively discover more files.
       scannedBytes += cached.scannedBytes;
-      if (scannedBytes >= MAX_CATALOG_METADATA_SCAN_BYTES) {
+      metadataBytes += cached.metadataBytes;
+      if (scannedBytes >= MAX_CATALOG_DISCOVERY_SCAN_BYTES) {
         truncated = true;
         break;
       }
@@ -307,6 +324,7 @@ async function discoverCliRecords(
     }
     let cacheable = false;
     let fileScannedBytes = 0;
+    let fileMetadataBytes = 0;
     let record: CatalogRecord | null = null;
     let metadata: CatalogDiscoveryCacheEntry["metadata"] = {};
     try {
@@ -362,6 +380,7 @@ async function discoverCliRecords(
         const createdAt = parseClaudeCatalogTimestampMs(raw.timestamp);
         record = {
           threadId: sessionId,
+          sourceRevision: sourceRevision(fileStat),
           name: firstPrompt ?? null,
           cwd: readBoundedString(raw.cwd, MAX_STRING_LENGTH),
           status: "stored",
@@ -384,18 +403,23 @@ async function discoverCliRecords(
       const scan = await readClaudeCatalogMetadata(
         handle,
         stat.size,
-        MAX_CATALOG_METADATA_SCAN_BYTES - scannedBytes,
+        MAX_CATALOG_DISCOVERY_SCAN_BYTES - scannedBytes,
+        MAX_CATALOG_METADATA_SCAN_BYTES - metadataBytes,
         inspectLine,
       );
       fileScannedBytes = scan.scannedBytes;
       scannedBytes += fileScannedBytes;
+      fileMetadataBytes = scan.metadataBytes;
+      metadataBytes += fileMetadataBytes;
       metadata = { name: customTitle ?? aiTitle, color };
       applyCatalogDiscovery(records, sessionId, { record, metadata });
       // A read whose chunk was capped by the remaining global budget stops on a smaller boundary
       // than a cold scan would, so its charged bytes undercount the unconstrained scan cost.
       // Don't cache such an entry: replaying its low cost later (with more budget free) would let
       // the warm scan cross the frontier and surface sessions a cold scan omits.
-      const budgetConstrained = scannedBytes >= MAX_CATALOG_METADATA_SCAN_BYTES;
+      const budgetConstrained =
+        scannedBytes >= MAX_CATALOG_DISCOVERY_SCAN_BYTES ||
+        metadataBytes >= MAX_CATALOG_METADATA_SCAN_BYTES;
       cacheable = !budgetConstrained && scan.complete;
     } finally {
       await handle.close();
@@ -405,16 +429,18 @@ async function discoverCliRecords(
       cacheCatalogDiscovery(filePath, {
         root,
         mtimeMs: fileStat.mtimeMs,
+        ctimeMs: fileStat.ctimeMs,
         size: fileStat.size,
         ino: fileStat.ino,
         sessionId,
         scannedBytes: fileScannedBytes,
+        metadataBytes: fileMetadataBytes,
         record,
         metadata,
         sidechain: sidechainIds.has(sessionId),
       });
     }
-    if (scannedBytes >= MAX_CATALOG_METADATA_SCAN_BYTES) {
+    if (scannedBytes >= MAX_CATALOG_DISCOVERY_SCAN_BYTES) {
       truncated = true;
       break;
     }
@@ -455,7 +481,8 @@ async function mergeClaudeSessions(
       continue;
     }
     const existing = records.get(sessionId);
-    const filePath = existing?.filePath ?? (await locateSessionFile(context, sessionId));
+    const located = existing ? undefined : await locateSessionFile(context, sessionId);
+    const filePath = existing?.filePath ?? located?.filePath;
     if (!filePath) {
       continue;
     }
@@ -480,15 +507,22 @@ async function mergeClaudeSessions(
       ...(customGroup ? { customGroup } : {}),
       ...(pullRequest ? { pullRequest } : {}),
       source: "claude-desktop",
+      ...(located ? { sourceRevision: sourceRevision(located) } : {}),
       color: undefined,
       filePath,
     });
   }
-  return [...records.values()].toSorted((left, right) => {
-    const recency =
-      (right.recencyAt ?? right.updatedAt ?? 0) - (left.recencyAt ?? left.updatedAt ?? 0);
-    return recency || left.threadId.localeCompare(right.threadId);
-  });
+  // Reuse the scan's canonical home and file signatures: no extra I/O on warm catalog polls.
+  const sourceHomeId = context.resolvedRoot
+    ? createHash("sha256").update(context.resolvedRoot).digest("hex")
+    : undefined;
+  return [...records.values()]
+    .map((record) => Object.assign({}, record, { sourceHomeId }))
+    .toSorted((left, right) => {
+      const recency =
+        (right.recencyAt ?? right.updatedAt ?? 0) - (left.recencyAt ?? left.updatedAt ?? 0);
+      return recency || left.threadId.localeCompare(right.threadId);
+    });
 }
 
 async function readCliScan(

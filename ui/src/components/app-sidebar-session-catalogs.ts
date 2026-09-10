@@ -151,6 +151,10 @@ export type CatalogBackingSessionDisplay = {
 
 export type CatalogSessionMenuRequest = {
   key: CatalogSessionKey;
+  sourceHomeId?: string;
+  sourceRevision?: string;
+  updatedAt?: number;
+  createdAt?: number;
   agentId: string;
   routeId: "chat" | "new-session";
   navigation: ApplicationNavigationOptions;

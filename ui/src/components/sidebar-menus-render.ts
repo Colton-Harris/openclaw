@@ -540,6 +540,11 @@ export function renderSidebarCatalogViewMenuForController(controller: SidebarMen
   return renderSidebarCatalogViewMenu({
     position,
     trigger: controller.catalogViewMenuTrigger,
+    showHidden: host.catalogVisibility.showsHidden(position.catalogId),
+    onToggleHidden: () => {
+      host.catalogVisibility.toggleShowHidden(position.catalogId);
+      controller.closeCatalogViewMenu({ restoreFocus: true });
+    },
     grouping: host.catalogProjectGrouping,
     owners: host.sessionOwnershipVisible ? host.sessionOwnerOptions : [],
     ownerFilterId: host.sessionOwnerFilterActive ? host.sessionOwnerFilterId : null,

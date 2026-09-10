@@ -5,6 +5,7 @@ import { openCatalogSessionInTerminal } from "../lib/sessions/catalog-terminal.t
 import type { CatalogSessionMenuRequest } from "./app-sidebar-session-catalogs.ts";
 import "./catalog-session-menu.ts";
 import type { CatalogSessionMenuAction } from "./catalog-session-menu.ts";
+import type { CatalogSessionVisibilityController } from "./catalog-session-visibility-controller.ts";
 import { SESSION_MENU_OPEN_EVENT } from "./session-progress-hovercard-target.ts";
 
 type SidebarCatalogSessionMenuState = CatalogSessionMenuRequest & { x: number; y: number };
@@ -19,6 +20,7 @@ export class SidebarCatalogMenuController {
       requestUpdate: () => void;
       terminalAvailable: () => boolean;
       navigate: (request: Pick<CatalogSessionMenuRequest, "navigation" | "routeId">) => void;
+      visibility?: CatalogSessionVisibilityController;
     },
   ) {}
 
@@ -76,6 +78,10 @@ export class SidebarCatalogMenuController {
     menu: SidebarCatalogSessionMenuState,
     action: CatalogSessionMenuAction,
   ): void {
+    if (action === "hide" || action === "restore") {
+      void this.hooks.visibility?.set(menu, action);
+      return;
+    }
     if (action === "terminal") {
       if (menu.canOpenTerminal && this.hooks.terminalAvailable()) {
         openCatalogSessionInTerminal(menu.key, menu.agentId);
@@ -97,6 +103,7 @@ export class SidebarCatalogMenuController {
         .trigger=${this.trigger}
         .lastActive=${menu.meta}
         .terminalDisabled=${!menu.canOpenTerminal || !this.hooks.terminalAvailable()}
+        .visibilityAction=${this.hooks.visibility?.action(menu) ?? null}
         .onAction=${(action: CatalogSessionMenuAction) => this.handleAction(menu, action)}
         .onClose=${() => this.close()}
       ></openclaw-catalog-session-menu>

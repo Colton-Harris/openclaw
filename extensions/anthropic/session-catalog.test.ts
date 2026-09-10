@@ -1149,6 +1149,8 @@ describe("Claude session catalog", () => {
               {
                 threadId,
                 name: "Node source",
+                sourceHomeId: "node-home",
+                sourceRevision: "node-revision",
                 color: "cyan",
                 cwd: "/work/on-node",
                 status: "stored",
@@ -1192,6 +1194,8 @@ describe("Claude session catalog", () => {
     expect(hosts?.[0]?.sessions[0]).toMatchObject({
       threadId,
       pullRequest: { numbers: [1234], state: "open" },
+      sourceHomeId: "node-home",
+      sourceRevision: "node-revision",
       color: "cyan",
       canContinue: true,
       canOpenTerminal: true,
@@ -1855,6 +1859,105 @@ describe("Claude session catalog", () => {
     },
   );
 
+  it.each([false, true])(
+    "scopes revisions to the canonical source and refreshes unchanged index timestamps (desktop: %s)",
+    async (desktop) => {
+      const home = await createHome();
+      const otherHome = await createHome();
+      const aliasHome = await createHome();
+      const threadId = "revision-session";
+      for (const root of [home, otherHome]) {
+        await writeProject({
+          home: root,
+          entries: [{ sessionId: threadId, modified: "2026-01-01T00:00:00Z" }],
+          transcripts: { [threadId]: [sdkCliMessage(threadId, "Original history")] },
+        });
+        if (desktop) {
+          await writeDesktopMetadata(root, "revision", {
+            cliSessionId: threadId,
+            title: "Desktop source",
+            isArchived: false,
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          });
+        }
+      }
+      await fs.mkdir(path.join(aliasHome, ".claude"));
+      await fs.symlink(
+        path.join(home, ".claude", "projects"),
+        path.join(aliasHome, ".claude", "projects"),
+      );
+      const before = (await listLocalClaudeSessionPage({}, home)).sessions[0]!;
+      const other = (await listLocalClaudeSessionPage({}, otherHome)).sessions[0]!;
+      const alias = (await listLocalClaudeSessionPage({}, aliasHome)).sessions[0]!;
+      expect(before.sourceHomeId).toMatch(/^[a-f0-9]{64}$/);
+      expect(before.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+      expect(other.sourceHomeId).not.toBe(before.sourceHomeId);
+      expect(alias.sourceHomeId).toBe(before.sourceHomeId);
+      expect(alias.sourceRevision).toBe(before.sourceRevision);
+      const history = await readLocalClaudeTranscriptPage({ threadId }, home);
+      expect(history.items.some((item) => item.text === "Original history")).toBe(true);
+      expect((await listLocalClaudeSessionPage({}, home)).sessions[0]).toEqual(before);
+      const transcriptPath = path.join(
+        home,
+        ".claude",
+        "projects",
+        "-workspace",
+        `${threadId}.jsonl`,
+      );
+      const bytes = await fs.readFile(transcriptPath);
+      await fs.appendFile(
+        transcriptPath,
+        `${JSON.stringify({ type: "custom-title", sessionId: threadId, customTitle: "New activity" })}\n`,
+      );
+      await expectClaudeCatalogEventually(home, (page) => {
+        expect(page.sessions[0]?.sourceHomeId).toBe(before.sourceHomeId);
+        expect(page.sessions[0]?.sourceRevision).not.toBe(before.sourceRevision);
+        expect(page.sessions[0]?.updatedAt).toBe(before.updatedAt);
+      });
+      expect((await fs.readFile(transcriptPath)).subarray(0, bytes.length)).toEqual(bytes);
+      expect(await readLocalClaudeTranscriptPage({ threadId }, home)).toEqual(history);
+    },
+  );
+
+  it.each([false, true])(
+    "refreshes revisions after a same-inode same-length rewrite with restored mtime (indexed: %s)",
+    async (indexed) => {
+      const home = await createHome();
+      const threadId = "rewritten-session";
+      await writeProject({
+        home,
+        entries: indexed ? [{ sessionId: threadId }] : [],
+        transcripts: { [threadId]: [sdkCliMessage(threadId, "Original history")] },
+      });
+      const transcriptPath = path.join(
+        home,
+        ".claude",
+        "projects",
+        "-workspace",
+        `${threadId}.jsonl`,
+      );
+      const timestamp = new Date("2026-01-01T00:00:00Z");
+      await fs.utimes(transcriptPath, timestamp, timestamp);
+      const originalStat = await fs.stat(transcriptPath);
+      const before = (await listLocalClaudeSessionPage({}, home)).sessions[0]!;
+      const original = await fs.readFile(transcriptPath, "utf8");
+      await fs.writeFile(transcriptPath, original.replace("Original history", "Revised! history"));
+      await fs.utimes(transcriptPath, timestamp, timestamp);
+      const rewrittenStat = await fs.stat(transcriptPath);
+      expect([rewrittenStat.ino, rewrittenStat.size, rewrittenStat.mtimeMs]).toEqual([
+        originalStat.ino,
+        originalStat.size,
+        originalStat.mtimeMs,
+      ]);
+      expect(rewrittenStat.ctimeMs).not.toBe(originalStat.ctimeMs);
+      await expectClaudeCatalogEventually(home, (page) => {
+        expect(page.sessions[0]?.sourceRevision).not.toBe(before.sourceRevision);
+      });
+      const history = await readLocalClaudeTranscriptPage({ threadId }, home);
+      expect(history.items.some((item) => item.text === "Revised! history")).toBe(true);
+    },
+  );
+
   it("finds a valid duplicate after an empty transcript on cold and cached scans", async () => {
     const home = await createHome();
     const sessionId = "duplicate-session";
@@ -2391,6 +2494,63 @@ describe("Claude session catalog", () => {
       expect(page.sessions[0]?.name).toBe("Bravo"),
     );
   });
+
+  it.each([false, true])(
+    "does not let large title tails starve later unindexed CLI discovery (indexed bulk: %s)",
+    async (indexed) => {
+      const home = await createHome();
+      const ids = Array.from({ length: 66 }, (_, index) => `large-${index}`);
+      await writeProject({
+        home,
+        project: "a-bulk",
+        entries: indexed ? ids.map((sessionId) => ({ sessionId, summary: "Index title" })) : [],
+        transcripts: {},
+      });
+      const bulk = path.join(home, ".claude", "projects", "a-bulk");
+      for (const sessionId of ids) {
+        const first = Buffer.from(`${JSON.stringify(sdkCliMessage(sessionId, "First prompt"))}\n`);
+        const last = Buffer.from(
+          `${JSON.stringify({ type: "custom-title", sessionId, customTitle: "Tail title" })}\n`,
+        );
+        await fs.writeFile(
+          path.join(bulk, `${sessionId}.jsonl`),
+          Buffer.concat([
+            first,
+            Buffer.alloc(1024 * 1024 - first.length - last.length - 1, 120),
+            Buffer.from("\n"),
+            last,
+          ]),
+        );
+      }
+      await writeProject({
+        home,
+        project: "z-later",
+        entries: [],
+        transcripts: { "live-human": [sdkCliMessage("live-human", "Retained native history")] },
+      });
+      const expected = [...ids, "live-human"].toSorted();
+      const cold = await listLocalClaudeSessionPage({ limit: 100 }, home);
+      expect(cold.sessions.map((session) => session.threadId).toSorted()).toEqual(expected);
+      expect(cold.sessions.some((session) => session.name === "Tail title")).toBe(true);
+      const live = cold.sessions.find((session) => session.threadId === "live-human")!;
+      expect(live.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+      expect(live.sourceHomeId).toMatch(/^[a-f0-9]{64}$/);
+      const history = await readLocalClaudeTranscriptPage({ threadId: "live-human" }, home);
+      expect(history.items.some((item) => item.text === "Retained native history")).toBe(true);
+      await fs.utimes(bulk, new Date(), new Date(Date.now() + 2_000));
+      await expectClaudeCatalogEventually(
+        home,
+        (page) => {
+          expect(page.sessions.map((session) => session.threadId).toSorted()).toEqual(expected);
+          expect(page.sessions.find((session) => session.threadId === "live-human")).toEqual(live);
+        },
+        { limit: 100 },
+      );
+      expect(await readLocalClaudeTranscriptPage({ threadId: "live-human" }, home)).toEqual(
+        history,
+      );
+    },
+  );
 
   it("keeps the metadata byte frontier in serial directory order under parallel stats", async () => {
     const home = await createHome();

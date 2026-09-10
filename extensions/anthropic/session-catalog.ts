@@ -120,6 +120,8 @@ function toGenericClaudeHost(
       const continuable = terminal.localResumable || nodeCli || Boolean(existingSessionKey);
       return {
         threadId: session.threadId,
+        ...(session.sourceHomeId ? { sourceHomeId: session.sourceHomeId } : {}),
+        ...(session.sourceRevision ? { sourceRevision: session.sourceRevision } : {}),
         ...(session.name ? { name: session.name } : {}),
         ...(session.color ? { color: session.color } : {}),
         ...(session.cwd ? { cwd: session.cwd } : {}),

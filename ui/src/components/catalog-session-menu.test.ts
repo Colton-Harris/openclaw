@@ -17,6 +17,29 @@ afterEach(() => {
 });
 
 describe("catalog session menu", () => {
+  it.each(["hide", "restore"] as const)(
+    "offers the reversible %s action without opening a runner",
+    async (action) => {
+      const container = document.createElement("div");
+      containers.push(container);
+      document.body.append(container);
+      const onAction = vi.fn();
+      render(
+        html`<openclaw-catalog-session-menu
+          .visibilityAction=${action}
+          .onAction=${onAction}
+        ></openclaw-catalog-session-menu>`,
+        container,
+      );
+      const menu = container.querySelector("openclaw-catalog-session-menu") as CatalogMenuElement;
+      await menu.updateComplete;
+      const item = menu.querySelector<CatalogMenuItem>(`wa-dropdown-item[value="${action}"]`);
+      expect(item).not.toBeNull();
+      item?.click();
+      expect(onAction).toHaveBeenCalledExactlyOnceWith(action);
+    },
+  );
+
   it("renders an anchored Web Awesome dropdown and focuses the first item", async () => {
     const container = document.createElement("div");
     containers.push(container);

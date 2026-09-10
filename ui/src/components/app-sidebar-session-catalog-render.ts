@@ -573,6 +573,10 @@ function renderCatalogSessionRow(
     params.onOpenMenu(
       {
         key: catalogKey,
+        sourceHomeId: session.sourceHomeId,
+        sourceRevision: session.sourceRevision,
+        updatedAt: session.updatedAt,
+        createdAt: session.createdAt,
         agentId: params.newSessionAgentId,
         routeId,
         navigation,

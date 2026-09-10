@@ -17,28 +17,36 @@ export const CLAUDE_CATALOG_IO_CONCURRENCY = 32;
 export async function readClaudeCatalogMetadata(
   handle: FileHandle,
   fileSize: number,
-  maxBytes: number,
+  maxDiscoveryBytes: number,
+  maxMetadataBytes: number,
   inspectLine: (line: Buffer, metadataOnly: boolean) => boolean,
-): Promise<{ scannedBytes: number; complete: boolean }> {
+): Promise<{ scannedBytes: number; metadataBytes: number; complete: boolean }> {
   let pending = Buffer.alloc(0);
   let fileOffset = 0;
   let scannedBytes = 0;
+  let metadataBytes = 0;
   let stopDiscovery = false;
   let skipPartial = false;
   const readWindow = async (end: number, metadataOnly: boolean) => {
-    while (fileOffset < end && scannedBytes < maxBytes) {
-      const size = Math.min(
-        CLAUDE_METADATA_READ_CHUNK_BYTES,
-        end - fileOffset,
-        maxBytes - scannedBytes,
-      );
+    while (fileOffset < end) {
+      const remaining = metadataOnly
+        ? maxMetadataBytes - metadataBytes
+        : maxDiscoveryBytes - scannedBytes;
+      if (remaining <= 0) {
+        return;
+      }
+      const size = Math.min(CLAUDE_METADATA_READ_CHUNK_BYTES, end - fileOffset, remaining);
       const chunk = Buffer.allocUnsafe(size);
       const { bytesRead } = await handle.read(chunk, 0, size, fileOffset);
       if (bytesRead === 0) {
         return;
       }
       fileOffset += bytesRead;
-      scannedBytes += bytesRead;
+      if (metadataOnly) {
+        metadataBytes += bytesRead;
+      } else {
+        scannedBytes += bytesRead;
+      }
       pending = pending.length
         ? Buffer.concat([pending, chunk.subarray(0, bytesRead)])
         : chunk.subarray(0, bytesRead);
@@ -60,7 +68,8 @@ export async function readClaudeCatalogMetadata(
   await readWindow(Math.min(fileSize, CLAUDE_METADATA_WINDOW_BYTES), false);
   const prefixReadToEnd = fileOffset >= fileSize;
   // Commands append metadata after conversation rows. Read at most the last MiB too,
-  // charging the same budget; never interpret a clipped JSONL line as a record.
+  // charging a separate enrichment budget so tails cannot starve later CLI discovery.
+  // Never interpret a clipped JSONL line as a record.
   const tailOffset = Math.max(fileOffset, fileSize - CLAUDE_METADATA_WINDOW_BYTES);
   skipPartial = tailOffset > fileOffset;
   if (skipPartial) {
@@ -71,7 +80,7 @@ export async function readClaudeCatalogMetadata(
   if (fileOffset >= fileSize && !skipPartial && pending.length > 0) {
     inspectLine(pending, stopDiscovery || !prefixReadToEnd);
   }
-  return { scannedBytes, complete: fileOffset >= fileSize };
+  return { scannedBytes, metadataBytes, complete: fileOffset >= fileSize };
 }
 
 type CatalogJsonCacheEntry = {
@@ -81,7 +90,7 @@ type CatalogJsonCacheEntry = {
   value: unknown;
 };
 
-type FileSignature = { mtimeMs: number; size: number; ino: number };
+type FileSignature = { mtimeMs: number; ctimeMs: number; size: number; ino: number };
 type SafeSessionFile = ({ filePath: string } & FileSignature) | undefined;
 
 type ClaudeProjectDirectorySnapshot = {
@@ -155,7 +164,13 @@ async function safeSessionFile(
     }
     const stat = await fs.stat(resolvedCandidate);
     return stat.isFile()
-      ? { filePath: resolvedCandidate, mtimeMs: stat.mtimeMs, size: stat.size, ino: stat.ino }
+      ? {
+          filePath: resolvedCandidate,
+          mtimeMs: stat.mtimeMs,
+          ctimeMs: stat.ctimeMs,
+          size: stat.size,
+          ino: stat.ino,
+        }
       : undefined;
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
@@ -353,7 +368,12 @@ export async function readProjectsTreeSnapshot(
           ? dir.childNames.map((name) => async () => {
               const stat = await fs.lstat(path.join(dir.directory, name)).catch(onReadFailure);
               if (stat?.isFile()) {
-                dir.files.set(name, { mtimeMs: stat.mtimeMs, size: stat.size, ino: stat.ino });
+                dir.files.set(name, {
+                  mtimeMs: stat.mtimeMs,
+                  ctimeMs: stat.ctimeMs,
+                  size: stat.size,
+                  ino: stat.ino,
+                });
               }
             })
           : [],
@@ -363,7 +383,7 @@ export async function readProjectsTreeSnapshot(
     });
     for (const dir of results) {
       if (dir) {
-        // Include inode so atomic replacements invalidate even with identical size and mtime.
+        // Include inode and ctime so replacement or in-place rewrites invalidate with restored mtime.
         const files = dir.childNames.map((name) => [name, dir.files.get(name)]);
         directories.set(dir.name, {
           ...dir,

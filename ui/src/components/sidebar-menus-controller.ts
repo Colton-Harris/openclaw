@@ -127,6 +127,7 @@ interface SidebarMenusControllerHost
   readonly catalogProjectGrouping: CatalogProjectGrouping;
   setCatalogProjectGrouping(grouping: CatalogProjectGrouping): void;
   hideSessionCatalog(catalogId: string): void;
+  readonly catalogVisibility: import("./catalog-session-visibility-controller.ts").CatalogSessionVisibilityController;
   sessionSortMode: SidebarSessionSortMode;
   effectiveSessionSortMode(): SidebarSessionSortMode;
   effectiveSessionsGrouping(): SidebarSessionsGrouping;
@@ -208,6 +209,7 @@ export class SidebarMenusController implements ReactiveController, SidebarMenusC
       requestUpdate: () => host.requestUpdate(),
       terminalAvailable: () => host.terminalAvailable,
       navigate: ({ routeId, navigation }) => host.onNavigate?.(routeId, navigation),
+      visibility: host.catalogVisibility,
     });
   }
 

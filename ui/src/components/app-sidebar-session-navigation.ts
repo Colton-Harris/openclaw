@@ -75,6 +75,7 @@ import {
   type SidebarSessionSortMode,
   type SidebarSessionStatusFilter,
 } from "./app-sidebar-session-types.ts";
+import { CatalogSessionVisibilityController } from "./catalog-session-visibility-controller.ts";
 import { SessionAttentionController } from "./session-attention-controller.ts";
 import { SessionDataController } from "./session-data-controller.ts";
 import type { SessionOrganizerController } from "./session-organizer-controller.ts";
@@ -172,9 +173,15 @@ export class AppSidebarSessionNavigationElement extends AppSidebarBase {
     loadStoredSidebarSessionStatusFilter();
   @state() hiddenSessionCatalogIds = loadStoredHiddenSessionCatalogIds();
 
+  readonly catalogVisibility = new CatalogSessionVisibilityController(this, {
+    gateway: () => this.context?.gateway,
+    catalogs: () => this.sessionData.sessionCatalogs,
+    selectedKey: () => this.getRouteSessionKey(),
+  });
+
   visibleSessionCatalogs = () =>
     visibleSessionCatalogProjection(
-      this.sessionData.sessionCatalogs,
+      this.catalogVisibility.project(this.sessionData.sessionCatalogs),
       this.hiddenSessionCatalogIds,
       this.sessionsStatusFilter === "archived",
     );

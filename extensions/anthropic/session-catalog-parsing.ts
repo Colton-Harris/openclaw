@@ -188,6 +188,8 @@ export function parseCatalogPage(value: unknown): ClaudeSessionCatalogPage {
       name = parseStringField("name", 500);
     }
     const cwd = parseStringField("cwd");
+    const sourceHomeId = parseStringField("sourceHomeId", 128);
+    const sourceRevision = parseStringField("sourceRevision", 128);
     const color = parseStringField("color");
     const createdAt = parseNumberField("createdAt") as number | undefined;
     const updatedAt = parseNumberField("updatedAt") as number | undefined;
@@ -197,6 +199,8 @@ export function parseCatalogPage(value: unknown): ClaudeSessionCatalogPage {
     const pullRequest = parsePullRequestSummary(candidate.pullRequest);
     return {
       threadId,
+      ...(sourceHomeId ? { sourceHomeId } : {}),
+      ...(sourceRevision ? { sourceRevision } : {}),
       status: "stored",
       source,
       modelProvider: "anthropic",

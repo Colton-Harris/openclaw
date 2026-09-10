@@ -19,7 +19,7 @@ import {
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
   parseNodeRunnerInventoryDeclaration,
 } from "../../infra/node-runner-inventory.js";
-import { resolveLocalNodeId } from "../../node-host/local-id.js";
+import { resolveLocalCatalogNodeIds } from "../../node-host/local-id.js";
 import type { NodeListNode } from "../../shared/node-list-types.js";
 import { recordRemoteNodeInfo, refreshRemoteNodeBins } from "../../skills/runtime/remote.js";
 import { createKnownNodeCatalog, getKnownNode, listKnownNodes } from "../node-catalog.js";
@@ -92,17 +92,17 @@ async function listNodesForClient(params: {
     connectedNodes: params.connectedNodes,
     ...runtimeState,
   });
-  const localNodeId = await resolveLocalNodeId().catch((error: unknown) => {
+  const localNodeIds = await resolveLocalCatalogNodeIds().catch((error: unknown) => {
     params.context.logGateway.warn(
       `failed to resolve same-install node-host identity: ${formatErrorMessage(error)}`,
     );
-    return null;
+    return new Set<string>();
   });
   const catalogNodes = params.nodeId
     ? [getKnownNode(catalog, params.nodeId)].filter(isVisibleNode)
     : listKnownNodes(catalog);
   const nodes = catalogNodes.map((node) =>
-    node.nodeId === localNodeId ? Object.assign({}, node, { gatewayLocal: true }) : node,
+    localNodeIds.has(node.nodeId) ? Object.assign({}, node, { gatewayLocal: true }) : node,
   );
   if (nodeInvokePolicy.canReadPendingNodePairing(params.client)) {
     return nodes;

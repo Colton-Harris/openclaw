@@ -42,6 +42,7 @@ type CatalogSessionLookup = {
 export async function lookupCatalogSession(params: {
   client: Pick<GatewayBrowserClient, "request">;
   key: CatalogSessionKey;
+  sourceHomeId?: string;
   agentId: string;
   isCurrent: () => boolean;
 }): Promise<CatalogSessionLookup | null> {
@@ -61,8 +62,16 @@ export async function lookupCatalogSession(params: {
       return null;
     }
     const catalog = listed.catalogs.find((candidate) => candidate.id === key.catalogId);
+    if (params.sourceHomeId !== undefined && catalog?.error) {
+      return { host: null, session: null };
+    }
     host = catalog?.hosts.find((candidate) => candidate.hostId === key.hostId) ?? null;
-    const session = host?.sessions.find((candidate) => candidate.threadId === key.threadId) ?? null;
+    const session =
+      host?.sessions.find(
+        (candidate) =>
+          candidate.threadId === key.threadId &&
+          (params.sourceHomeId === undefined || candidate.sourceHomeId === params.sourceHomeId),
+      ) ?? null;
     if (session) {
       return { host, session };
     }

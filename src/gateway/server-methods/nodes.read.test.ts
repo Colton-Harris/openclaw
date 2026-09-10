@@ -15,13 +15,17 @@ import { nodeEventHandlers } from "./nodes.event.js";
 import { nodeReadHandlers } from "./nodes.read.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
-const { listDevicePairingMock, listNodePairingMock, recordHostStatsMock, resolveLocalNodeIdMock } =
-  vi.hoisted(() => ({
-    listDevicePairingMock: vi.fn(),
-    listNodePairingMock: vi.fn(),
-    recordHostStatsMock: vi.fn(),
-    resolveLocalNodeIdMock: vi.fn(),
-  }));
+const {
+  listDevicePairingMock,
+  listNodePairingMock,
+  recordHostStatsMock,
+  resolveLocalCatalogNodeIdsMock,
+} = vi.hoisted(() => ({
+  listDevicePairingMock: vi.fn(),
+  listNodePairingMock: vi.fn(),
+  recordHostStatsMock: vi.fn(),
+  resolveLocalCatalogNodeIdsMock: vi.fn(),
+}));
 
 vi.mock("../../infra/device-pairing.js", async () => {
   const actual = await vi.importActual<typeof import("../../infra/device-pairing.js")>(
@@ -31,7 +35,7 @@ vi.mock("../../infra/device-pairing.js", async () => {
 });
 
 vi.mock("../../node-host/local-id.js", () => ({
-  resolveLocalNodeId: resolveLocalNodeIdMock,
+  resolveLocalCatalogNodeIds: resolveLocalCatalogNodeIdsMock,
 }));
 
 vi.mock("../../infra/device-pairing-node.js", async (importOriginal) => {
@@ -115,7 +119,7 @@ describe("node read projections", () => {
         return true;
       });
       listDevicePairingMock.mockResolvedValue({ pending: [], paired: [pairedNode] });
-      resolveLocalNodeIdMock.mockResolvedValue(undefined);
+      resolveLocalCatalogNodeIdsMock.mockResolvedValue(new Set());
       const context = {
         nodeRegistry,
         broadcast: vi.fn(),
@@ -216,7 +220,7 @@ describe("node read projections", () => {
         >();
       listDevicePairingMock.mockClear().mockReturnValue(snapshot.promise);
       listNodePairingMock.mockClear();
-      resolveLocalNodeIdMock.mockResolvedValue(undefined);
+      resolveLocalCatalogNodeIdsMock.mockResolvedValue(new Set());
       const resolveCurrentPairingState = vi.fn();
       const { nodeRegistry } = createNodeRegistryRuntime(
         () => new NodeRegistry({ resolveCurrentPairingState }),
@@ -272,8 +276,9 @@ describe("node read projections", () => {
 
   it("preserves Gateway-local ownership across list and describe", async () => {
     const localNodeId = "local-node";
+    const nativeNodeId = "native-node";
     const remoteNodeId = "remote-node";
-    const pairedNodes = [createPairedNode(localNodeId), createPairedNode(remoteNodeId)];
+    const pairedNodes = [localNodeId, nativeNodeId, remoteNodeId].map(createPairedNode);
     const runtime = createNodeRegistryRuntime(() => new NodeRegistry());
     const { nodeRegistry } = runtime;
     let remoteClient: ReturnType<typeof registerNode> | undefined;
@@ -292,7 +297,7 @@ describe("node read projections", () => {
       }),
     ).toEqual({ changed: true });
     listDevicePairingMock.mockResolvedValue({ pending: [], paired: pairedNodes });
-    resolveLocalNodeIdMock.mockResolvedValue(localNodeId);
+    resolveLocalCatalogNodeIdsMock.mockResolvedValue(new Set([localNodeId, nativeNodeId]));
 
     const client = {
       connect: { scopes: ["operator.read"] },
@@ -324,6 +329,7 @@ describe("node read projections", () => {
     };
     expect(list.nodes.filter((node) => node.gatewayLocal)).toEqual([
       expect.objectContaining({ nodeId: localNodeId, gatewayLocal: true }),
+      expect.objectContaining({ nodeId: nativeNodeId, gatewayLocal: true }),
     ]);
     expect(list.nodes.find((node) => node.nodeId === remoteNodeId)).not.toHaveProperty(
       "gatewayLocal",
@@ -335,6 +341,9 @@ describe("node read projections", () => {
 
     await expect(request("node.describe", { nodeId: localNodeId })).resolves.toEqual(
       expect.objectContaining({ nodeId: localNodeId, gatewayLocal: true }),
+    );
+    await expect(request("node.describe", { nodeId: nativeNodeId })).resolves.toEqual(
+      expect.objectContaining({ nodeId: nativeNodeId, gatewayLocal: true }),
     );
     await expect(request("node.describe", { nodeId: remoteNodeId })).resolves.toMatchObject({
       issues: [NODE_RUNNER_UPDATE_REQUIRED_ISSUE],

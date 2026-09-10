@@ -263,6 +263,8 @@ export function renderSidebarSessionGroupMenu(params: {
 }
 
 export function renderSidebarCatalogViewMenu(params: {
+  showHidden?: boolean;
+  onToggleHidden?: () => void;
   position: { catalogId: string; x: number; y: number };
   trigger: HTMLElement | null;
   grouping: CatalogProjectGrouping;
@@ -307,6 +309,8 @@ export function renderSidebarCatalogViewMenu(params: {
             params.onOwnerFilterChange(null, true);
           } else if (value === "hide-catalog") {
             params.onHide();
+          } else if (value === "show-hidden-sessions") {
+            params.onToggleHidden?.();
           }
         }}
         @keydown=${(event: KeyboardEvent) =>
@@ -326,6 +330,7 @@ export function renderSidebarCatalogViewMenu(params: {
                   }),
                 )}
                 ${renderSidebarOwnerFilter(params)}
+                ${params.onToggleHidden ? renderSidebarMenuRadioItem({ value: "show-hidden-sessions", checked: params.showHidden === true, label: t("chat.catalog.showHidden") }) : nothing}
                 <div class="session-menu__separator" role="separator"></div>
                 <wa-dropdown-item class="sidebar-session-sort-menu__item" value="hide-catalog">
                   <span class="session-menu__text">${t("chat.sidebar.hideFromSidebar")}</span>

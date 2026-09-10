@@ -4857,6 +4857,13 @@ export const en: TranslationMap & {
       openInOpenClaw: "Open in OpenClaw",
       openInTerminal: "Open in terminal",
       terminalUnavailable: "Terminal opening is unavailable for this session.",
+      restore: "Restore to sidebar",
+      showHidden: "Show hidden sessions",
+      hiddenRecovery:
+        "Hidden from your sidebar. Use the catalog view menu > Show hidden sessions to restore it. History and runners are unchanged; new activity makes it visible again.",
+      restored: "Session restored to your sidebar.",
+      visibilityUnavailable:
+        "Could not change session visibility. Refresh the catalog and check that your profile is connected.",
     },
     taskSuggestions: {
       eyebrow: "Suggested task · in {repo}",

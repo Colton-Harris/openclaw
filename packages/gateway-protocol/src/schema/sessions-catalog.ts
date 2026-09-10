@@ -63,6 +63,8 @@ export const SessionCatalogPullRequestSummarySchema = closedObject({
 export const SessionCatalogSessionSchema = closedObject({
   threadId: NonEmptyString,
   sourceHomeId: Type.Optional(NonEmptyString),
+  /** Opaque source-content revision; display preferences never establish runner inactivity. */
+  sourceRevision: Type.Optional(NonEmptyString),
   name: Type.Optional(Type.String()),
   /** Named tint imported from the source CLI session (SESSION_COLOR_IDS). */
   color: Type.Optional(Type.String()),
