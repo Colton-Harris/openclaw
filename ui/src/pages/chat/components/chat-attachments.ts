@@ -407,39 +407,44 @@ function handleChatAttachmentFileSelect(e: Event, props: ChatAttachmentControlsP
   void appendAttachmentFiles(files, props);
 }
 
-function handleChatAttachmentDrop(e: DragEvent, props: ChatAttachmentControlsProps) {
-  e.preventDefault();
-  void appendAttachmentFiles([...(e.dataTransfer?.files ?? [])], props);
-}
-
 type ChatAttachmentDropProps = ChatAttachmentControlsProps & {
   canCompose: boolean;
 };
 
-// Both composers share balanced nested drag state and cancel non-editable
-// text/URL drops so disabled surfaces cannot navigate away from a draft.
+// Keep DOM-owned drag state across rerenders; native drags may end outside the pane.
+const attachmentDropStates = new WeakMap<HTMLElement, { depth: number; abort: AbortController }>();
+
+function clearAttachmentDrop(target: HTMLElement) {
+  target.removeAttribute("data-attachment-drop-active");
+  attachmentDropStates.get(target)?.abort.abort();
+  attachmentDropStates.delete(target);
+}
+
 export function createChatAttachmentDropHandlers(props: ChatAttachmentDropProps) {
-  let depth = 0;
   const setActive = (event: DragEvent, active: boolean) => {
     const target = event.currentTarget;
     if (!(target instanceof HTMLElement)) {
       return;
     }
+    let state = attachmentDropStates.get(target);
     if (active) {
       if (!props.canCompose || !isFileDrag(event.dataTransfer)) {
         return;
       }
-      depth += 1;
-    } else {
-      depth = Math.max(0, depth - 1);
-    }
-    target.toggleAttribute("data-attachment-drop-active", depth > 0);
-  };
-  const clearActive = (event: DragEvent) => {
-    depth = 0;
-    const target = event.currentTarget;
-    if (target instanceof HTMLElement) {
-      target.removeAttribute("data-attachment-drop-active");
+      if (!state) {
+        state = { depth: 0, abort: new AbortController() };
+        attachmentDropStates.set(target, state);
+        const clear = () => clearAttachmentDrop(target);
+        const options = { capture: true, signal: state.abort.signal };
+        for (const type of ["drop", "dragend", "blur", "pointerdown", "keydown"]) {
+          window.addEventListener(type, clear, options);
+        }
+        props.readSignal?.addEventListener("abort", clear, options);
+      }
+      state.depth += 1;
+      target.setAttribute("data-attachment-drop-active", "");
+    } else if (state && --state.depth <= 0) {
+      clearAttachmentDrop(target);
     }
   };
   return {
@@ -461,16 +466,12 @@ export function createChatAttachmentDropHandlers(props: ChatAttachmentDropProps)
       }
     },
     onDrop: (event: DragEvent) => {
-      if (!isFileDrag(event.dataTransfer)) {
-        if (!isEditableDropTarget(event)) {
-          event.preventDefault();
-        }
-        return;
+      const fileDrag = isFileDrag(event.dataTransfer);
+      if (fileDrag || !isEditableDropTarget(event)) {
+        event.preventDefault();
       }
-      event.preventDefault();
-      clearActive(event);
-      if (props.canCompose) {
-        handleChatAttachmentDrop(event, props);
+      if (fileDrag && props.canCompose) {
+        void appendAttachmentFiles([...(event.dataTransfer?.files ?? [])], props);
       }
     },
   };
