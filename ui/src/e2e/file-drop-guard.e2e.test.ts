@@ -25,6 +25,35 @@ suite.define(() => {
         await composer.waitFor({ state: "visible", timeout: 10_000 });
         await composer.fill("draft survives stray drop");
 
+        const chat = page.locator("section.card.chat");
+        await chat.evaluate((element) => {
+          const transfer = new DataTransfer();
+          transfer.items.add(new File(["promised image"], "photo.png", { type: "image/png" }));
+          element.dispatchEvent(
+            new DragEvent("dragenter", {
+              bubbles: true,
+              dataTransfer: transfer,
+            }),
+          );
+        });
+        expect(await chat.getAttribute("data-attachment-drop-active")).not.toBeNull();
+        await expect
+          .poll(() => chat.evaluate((element) => getComputedStyle(element, "::after").opacity))
+          .toBe("0.1");
+        if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
+          await page.screenshot({ path: `${suite.artifactDir}/file-drag-active.png` });
+        }
+        // Resume ordinary input after the remote/native source disappears.
+        await composer.press("Escape");
+        await expect.poll(() => chat.getAttribute("data-attachment-drop-active")).toBeNull();
+
+        await expect
+          .poll(() => chat.evaluate((element) => getComputedStyle(element, "::after").opacity))
+          .toBe("0");
+        if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
+          await page.screenshot({ path: `${suite.artifactDir}/file-drag-cleared.png` });
+        }
+
         const stray = await page.locator("openclaw-app-shell").evaluate((element) => {
           const transfer = new DataTransfer();
           transfer.items.add(new File(["stray"], "stray-proof.txt", { type: "text/plain" }));
