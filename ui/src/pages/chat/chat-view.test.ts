@@ -6103,12 +6103,15 @@ describe("chat attachment picker", () => {
     expect(secondChat.hasAttribute("data-attachment-drop-active")).toBe(false);
   });
 
-  it("keeps the file drop overlay stable across nested drag targets", () => {
+  it("keeps the file drop overlay stable across nested drag targets and rerenders", () => {
     const container = renderChatView();
     const chat = requireElement(container, "section.card.chat", "chat drop target");
 
     chat.dispatchEvent(createDragEvent("dragenter"));
+    renderChatInto(container, { draft: "rerender during native drag" });
+    expect(container.querySelector("section.card.chat")).toBe(chat);
     chat.dispatchEvent(createDragEvent("dragenter"));
+    renderChatInto(container, { draft: "rerender inside nested target" });
     chat.dispatchEvent(createDragEvent("dragleave"));
     expect(chat.hasAttribute("data-attachment-drop-active")).toBe(true);
 
@@ -6116,6 +6119,33 @@ describe("chat attachment picker", () => {
     expect(chat.hasAttribute("data-attachment-drop-active")).toBe(false);
 
     chat.dispatchEvent(createDragEvent("dragenter", ["application/x-openclaw-session"]));
+    expect(chat.hasAttribute("data-attachment-drop-active")).toBe(false);
+  });
+
+  it.each(["drop", "dragend", "blur", "pointerdown", "keydown"])(
+    "clears a stranded file drag when %s terminates the interaction",
+    (type) => {
+      const container = renderChatView();
+      const chat = requireElement(container, "section.card.chat", "chat drop target");
+      chat.dispatchEvent(createDragEvent("dragenter"));
+      expect(chat.hasAttribute("data-attachment-drop-active")).toBe(true);
+
+      // A remote/native drag can terminate outside this pane without delivering
+      // its promised file or a matching dragleave.
+      window.dispatchEvent(new Event(type));
+      expect(chat.hasAttribute("data-attachment-drop-active")).toBe(false);
+      chat.dispatchEvent(createDragEvent("dragenter"));
+      chat.dispatchEvent(createDragEvent("dragleave"));
+      expect(chat.hasAttribute("data-attachment-drop-active")).toBe(false);
+    },
+  );
+
+  it("retires a file drag with its composer read lifecycle", () => {
+    const reads = new ChatAttachmentReadLifecycle(() => undefined);
+    const container = renderChatView({ readSignal: reads.readSignal });
+    const chat = requireElement(container, "section.card.chat", "chat drop target");
+    chat.dispatchEvent(createDragEvent("dragenter"));
+    reads.abortReads();
     expect(chat.hasAttribute("data-attachment-drop-active")).toBe(false);
   });
 
