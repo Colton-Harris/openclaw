@@ -3667,6 +3667,41 @@ describe("WorkboardStore", () => {
     expect(stopped.metadata?.failureCount).toBeUndefined();
   });
 
+  it("keeps deliberately parked backlog cards out of automatic promotion", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const parent = await store.create({ title: "Parked parent", status: "running" });
+    const child = await store.create({
+      title: "Parked child",
+      status: "todo",
+      parents: [parent.id],
+    });
+
+    const parked = await store.move(child.id, "backlog", child.position);
+    expect(parked.metadata?.automation?.parkedAt).toEqual(expect.any(Number));
+
+    expect((await store.dispatch(500)).promoted).not.toContainEqual(
+      expect.objectContaining({ id: child.id }),
+    );
+    await expect(store.get(child.id)).resolves.toMatchObject({ status: "backlog" });
+
+    await store.complete(parent.id, { summary: "Parent done." });
+    expect((await store.dispatch(1_000)).promoted).not.toContainEqual(
+      expect.objectContaining({ id: child.id }),
+    );
+    await expect(store.get(child.id)).resolves.toMatchObject({ status: "backlog" });
+
+    const unparked = await store.move(child.id, "todo", child.position);
+    expect(unparked.metadata?.automation?.parkedAt).toBeUndefined();
+    expect((await store.dispatch(2_000)).promoted).toContainEqual(
+      expect.objectContaining({ id: child.id, status: "ready" }),
+    );
+
+    await store.move(child.id, "backlog", child.position);
+    const explicitlyPromoted = await store.promote(child.id);
+    expect(explicitlyPromoted.status).toBe("ready");
+    expect(explicitlyPromoted.metadata?.automation?.parkedAt).toBeUndefined();
+  });
+
   it("includes parent results and recent assignee work in worker context", async () => {
     const store = new WorkboardStore(createMemoryStore());
     const parent = await store.create({

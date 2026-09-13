@@ -285,6 +285,8 @@ export type WorkboardAutomation = {
   createdCardIds?: string[];
   dispatchCount?: number;
   lastDispatchAt?: number;
+  /** Set when an operator deliberately parks the card in backlog. */
+  parkedAt?: number;
   launch?: WorkboardLaunchState;
 };
 

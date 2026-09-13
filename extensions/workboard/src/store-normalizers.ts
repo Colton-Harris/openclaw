@@ -465,6 +465,9 @@ export function normalizeAutomation(
   const lastDispatchAt = Object.hasOwn(record, "lastDispatchAt")
     ? normalizeTimestamp(record.lastDispatchAt, 0) || undefined
     : fallback.lastDispatchAt;
+  const parkedAt = Object.hasOwn(record, "parkedAt")
+    ? normalizeTimestamp(record.parkedAt, 0) || undefined
+    : fallback.parkedAt;
   const workspace = Object.hasOwn(record, "workspace")
     ? normalizeWorkspace(record.workspace, fallback.workspace)
     : fallback.workspace;
@@ -488,6 +491,7 @@ export function normalizeAutomation(
     ...(createdCardIds?.length ? { createdCardIds } : {}),
     ...(dispatchCount ? { dispatchCount } : {}),
     ...(lastDispatchAt ? { lastDispatchAt } : {}),
+    ...(parkedAt ? { parkedAt } : {}),
     ...(launch ? { launch } : {}),
   });
   return Object.keys(next).length ? next : undefined;
@@ -1237,6 +1241,7 @@ function removeUndefinedAutomationFields(automation: WorkboardAutomation): Workb
     "createdCardIds",
     "dispatchCount",
     "lastDispatchAt",
+    "parkedAt",
     "launch",
   ] as const) {
     const value = next[key];

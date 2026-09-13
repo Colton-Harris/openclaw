@@ -33,7 +33,24 @@ export class WorkboardPromoteStore extends WorkboardEnrichmentStore {
           // Recheck after every cross-host CAS conflict so a worker cannot move
           // a card claimed between the read and write.
           assertCanMutateClaimedCard(current, scope);
-          return { status, position };
+          const shouldPark = status === "backlog" && current.status !== "backlog";
+          const shouldUnpark =
+            status !== "backlog" && current.metadata?.automation?.parkedAt !== undefined;
+          return {
+            status,
+            position,
+            ...(shouldPark || shouldUnpark
+              ? {
+                  metadata: {
+                    ...current.metadata,
+                    automation: {
+                      ...current.metadata?.automation,
+                      ...(shouldPark ? { parkedAt: Date.now() } : { parkedAt: 0 }),
+                    },
+                  },
+                }
+              : {}),
+          };
         },
         {
           allowMetadataDependencyLinks: false,
@@ -70,6 +87,10 @@ export class WorkboardPromoteStore extends WorkboardEnrichmentStore {
             ...clearDiagnostics(existing.metadata, ["stranded_ready", "blocked_too_long"]),
             comments,
             stale: null,
+            automation: {
+              ...existing.metadata?.automation,
+              parkedAt: 0,
+            },
           },
         },
         { enforceStatusHolds: input.force !== true },
