@@ -211,7 +211,11 @@ function registerMonitor(params: {
   claimDirectChild?: (threadId: string) => (() => void) | undefined;
   rejectPendingDirectChild?: (threadId: string, reason: string) => void;
   onDirectChildAccepted?: () => void;
-}): { bindTurn: (turnId: string) => void; unregister: () => void } {
+}): {
+  bindTurn: (turnId: string) => void;
+  unregister: () => void;
+  authorizeChildThread: (threadId: string) => boolean;
+} {
   let monitor = monitors.get(params.client);
   if (!monitor) {
     // Native start/completion can race; serialize each child so only its
@@ -269,7 +273,7 @@ function registerMonitor(params: {
     });
     monitors.set(params.client, monitor);
   }
-  return monitor.registerParent({
+  const registration = monitor.registerParent({
     parentThreadId: params.parentThreadId,
     requesterSessionKey: params.requesterSessionKey,
     taskRuntimeScope: params.taskRuntimeScope,
@@ -279,6 +283,11 @@ function registerMonitor(params: {
     rejectPendingDirectChild: params.rejectPendingDirectChild,
     onDirectChildAccepted: params.onDirectChildAccepted,
   });
+  return {
+    ...registration,
+    authorizeChildThread: (threadId) =>
+      monitor?.authorizeChildThread(params.parentThreadId, threadId) ?? false,
+  };
 }
 
 class Monitor {
@@ -384,7 +393,11 @@ class Monitor {
     claimDirectChild?: (threadId: string) => (() => void) | undefined;
     rejectPendingDirectChild?: (threadId: string, reason: string) => void;
     onDirectChildAccepted?: () => void;
-  }): { bindTurn: (turnId: string) => void; unregister: () => void } {
+  }): {
+    bindTurn: (turnId: string) => void;
+    unregister: () => void;
+    authorizeChildThread: (threadId: string) => boolean;
+  } {
     const parentThreadId = params.parentThreadId.trim();
     if (!parentThreadId) {
       throw new Error("Codex native subagent monitor requires a parent thread id");
@@ -436,6 +449,8 @@ class Monitor {
       });
     });
     return {
+      authorizeChildThread: (threadThreadId) =>
+        this.authorizeChildThread(parentThreadId, threadThreadId),
       bindTurn: (turnIdInput) => {
         const turnId = turnIdInput.trim();
         if (!turnId || this.parentStates.get(parentThreadId) !== registeredState) {
@@ -479,6 +494,23 @@ class Monitor {
         }
       },
     };
+  }
+
+  /** Returns true only while this parent owns a non-terminal direct child. */
+  authorizeChildThread(parentThreadIdInput: string, childThreadIdInput: string): boolean {
+    const parentThreadId = parentThreadIdInput.trim();
+    const childThreadId = childThreadIdInput.trim();
+    if (!parentThreadId || !childThreadId || this.disposed) {
+      return false;
+    }
+    const child = this.childStates.get(childThreadId);
+    return Boolean(
+      child &&
+      child.parentThreadId === parentThreadId &&
+      !child.terminal &&
+      !child.settledWithoutCompletion &&
+      child.releaseDirectChild,
+    );
   }
 
   retireParent(parentThreadIdInput: string): void {
