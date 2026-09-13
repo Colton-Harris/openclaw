@@ -7,7 +7,11 @@ import { type WorkboardCard, WORKBOARD_STATUSES } from "@openclaw/workboard-cont
 import { MAX_DATE_TIMESTAMP_MS } from "openclaw/plugin-sdk/number-runtime";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PersistedWorkboardCard, WorkboardCardStore } from "./persistence-types.js";
+import type {
+  PersistedWorkboardCard,
+  WorkboardCardStore,
+  WorkboardKeyedStore,
+} from "./persistence-types.js";
 import { createWorkboardSqliteStores } from "./sqlite-store.js";
 import { secondsToDurationMs } from "./store-constants.js";
 import { normalizeExecution } from "./store-normalizers.js";
@@ -18,6 +22,26 @@ import {
   sqliteTestAuxStores,
 } from "./test/sqlite-store.js";
 
+function createMemoryStore<T = PersistedWorkboardCard>(options?: {
+  beforeRegister?: (key: string, value: T) => Promise<void> | void;
+}): WorkboardKeyedStore<T> {
+  const entries = new Map<string, T>();
+  return {
+    async register(key, value) {
+      await options?.beforeRegister?.(key, value);
+      entries.set(key, value);
+    },
+    async lookup(key) {
+      return entries.get(key);
+    },
+    async delete(key) {
+      return entries.delete(key);
+    },
+    async entries() {
+      return [...entries].flatMap(([key, value]) => (value ? [{ key, value }] : []));
+    },
+  };
+}
 function createSignal() {
   let resolve = () => {};
   const promise = new Promise<void>((done) => {
