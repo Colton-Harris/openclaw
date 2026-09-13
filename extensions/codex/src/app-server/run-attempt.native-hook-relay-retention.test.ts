@@ -12,6 +12,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import { nativeHookRelayUnregisterQueue } from "./native-hook-relay-state.js";
+import { createCodexNativeHookRelay } from "./native-hook-relay.js";
 import type { CodexServerNotification } from "./protocol.js";
 import {
   createParams,
@@ -278,6 +279,27 @@ describe("runCodexAppServerAttempt native hook relay retention", () => {
         ).toBeDefined();
         fixture.closeHost();
         fixture.closeAdmission();
+        const nextParams = { ...params, runId: `${params.runId}-next` };
+        const nextFixture = await createAdmittedHostCapabilityTestFixture(nextParams);
+        const nextRelay = createCodexNativeHookRelay({
+          options: { enabled: true },
+          events: ["pre_tool_use"],
+          agentId: nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)?.agentId,
+          sessionId: params.sessionId,
+          sessionKey: params.sessionKey,
+          config: params.config,
+          runId: nextParams.runId,
+          attemptTimeoutMs: params.timeoutMs,
+          startupTimeoutMs: params.timeoutMs,
+          turnStartTimeoutMs: params.timeoutMs,
+          loopDetectionPreToolUseRelay: true,
+          signal: new AbortController().signal,
+          hostCapabilities: nextFixture.hostCapabilities,
+          onPreToolUseFailure: () => undefined,
+        });
+        nextRelay?.unregister();
+        nextFixture.closeHost();
+        nextFixture.closeAdmission();
         await expect(
           invokeNativeHookRelay({
             provider: "codex",
