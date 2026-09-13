@@ -82,7 +82,7 @@ export function resolveMemoryToolContext(options: MemoryToolOptions) {
 const SEARCH_CORPUS_OUTCOME_GUIDANCE =
   "Corpus outcomes cover each requested corpus; a corpus warning means results are partial and must be surfaced to the user.";
 const GET_READ_OUTCOME_GUIDANCE =
-  "status=ok means the requested excerpt was read; status=not_found means every requested available corpus missed.";
+  "status=ok means the requested excerpt was read; status=not_found means every requested available corpus missed. memory_get reads Markdown memory files and wiki pages; use sessions_history for exact session-transcript excerpts.";
 
 export const MEMORY_SEARCH_TOOL_CONTRACT = {
   label: "Memory Search",

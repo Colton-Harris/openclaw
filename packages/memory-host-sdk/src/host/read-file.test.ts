@@ -19,6 +19,17 @@ async function createDirectorySymlink(target: string, linkPath: string): Promise
 }
 
 describe("readMemoryFile", () => {
+  it("directs session transcript reads to sessions_history", async () => {
+    await expect(
+      readMemoryFile({
+        workspaceDir: "/tmp/memory-read-file-workspace",
+        relPath: "sessions/main/example.jsonl",
+      }),
+    ).rejects.toThrow(
+      "memory_get reads Markdown memory files; use sessions_history for session transcripts",
+    );
+  });
+
   it("returns not found for absent extra paths and rejects non-directory parents", async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "memory-read-file-"));
     try {
