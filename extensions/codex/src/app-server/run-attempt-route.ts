@@ -74,6 +74,8 @@ export async function prepareCodexAttemptRoute(
       releaseCurrentRoute();
       resourceState.turnRoute = resourceState.turnRouter.reserveThread({
         threadId: resourceState.thread.threadId,
+        authorizeChildThread: (threadId) =>
+          resourceState.nativeSubagentMonitor?.authorizeChildThread(threadId) ?? false,
       });
     }
     if (!resourceState.turnRoute) {

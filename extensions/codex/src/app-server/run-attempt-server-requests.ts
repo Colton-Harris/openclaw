@@ -79,6 +79,8 @@ export function createCodexAttemptServerRequestController(
   ) => {
     const signal = AbortSignal.any([runAbortController.signal, requestSignal]);
     const turnId = turnIdRef.current;
+    const childThreadRequest = scope.threadId !== resourceState.thread.threadId;
+    const requestTurnId = childThreadRequest ? scope.turnId : turnId;
     const projector = projectorRef.current;
     let requestCountsAsTurnActivity = false;
     const markCurrentTurnRequestProgress = () => {
@@ -87,7 +89,7 @@ export function createCodexAttemptServerRequestController(
       noteProgress(`request:${request.method}:start`);
     };
     try {
-      if (!turnId) {
+      if (!requestTurnId) {
         return undefined;
       }
       if (request.method === "mcpServer/elicitation/request") {
@@ -97,8 +99,8 @@ export function createCodexAttemptServerRequestController(
         const approvalResult = await routeCodexAppServerElicitationRequest({
           requestParams: request.params,
           paramsForRun: params,
-          threadId: resourceState.thread.threadId,
-          turnId,
+          threadId: scope.threadId,
+          turnId: requestTurnId,
           autoApproveMcpTools: autoApprove,
           projectedMcpServers: runtime.bundleMcpThreadConfig.configPatch?.mcp_servers,
           getActiveMcpToolCall: (serverName) => projector?.getActiveMcpToolCall(serverName),
@@ -134,8 +136,8 @@ export function createCodexAttemptServerRequestController(
             method: request.method,
             requestParams: request.params,
             paramsForRun: params,
-            threadId: resourceState.thread.threadId,
-            turnId,
+            threadId: scope.threadId,
+            turnId: requestTurnId,
             nativeHookRelay: resourceState.nativeHookRelay,
             autoApprove,
             signal,
@@ -146,7 +148,12 @@ export function createCodexAttemptServerRequestController(
         return undefined;
       }
       const call = readCodexDynamicToolCallParams(request.params);
-      if (!call || call.threadId !== resourceState.thread.threadId || call.turnId !== turnId) {
+      if (
+        !call ||
+        call.threadId !== scope.threadId ||
+        call.turnId !== requestTurnId ||
+        (!childThreadRequest && call.threadId !== resourceState.thread.threadId)
+      ) {
         return undefined;
       }
       const replayedExecution = openClawDynamicToolExecutions.get(call);

@@ -1,3 +1,4 @@
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
 import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodexAppServerClient } from "./client.js";
@@ -154,6 +155,54 @@ describe("CodexAppServerTurnRouter", () => {
     expect(secondRequests).toHaveBeenCalledTimes(1);
     expect(firstResponse).toEqual({ id: "request-1", result: { owner: "first" } });
     expect(secondResponse).toEqual({ id: "request-2", result: { owner: "second" } });
+  });
+
+  it("routes only an authorized direct child through its retained parent route", async () => {
+    const harness = createHarness();
+    let authorized = true;
+    const requests = vi.fn((request: CodexAppServerServerRequest, scope: { threadId: string }) => ({
+      owner: scope.threadId,
+      method: request.method,
+    }));
+    const route = getCodexAppServerTurnRouter(harness.client).reserveThread({
+      threadId: "parent-thread",
+      authorizeChildThread: (threadId) => authorized && threadId === "child-thread",
+      onRequest: requests,
+    });
+    route.armTurn();
+    await route.bindTurn("parent-turn");
+
+    harness.send({
+      id: "child-request",
+      method: "item/tool/call",
+      params: { threadId: "child-thread", turnId: "child-turn", tool: "exec" },
+    });
+    expect(await waitForResponse(harness, "child-request")).toEqual({
+      id: "child-request",
+      result: { owner: "child-thread", method: "item/tool/call" },
+    });
+
+    harness.send({
+      id: "foreign-request",
+      method: "item/tool/call",
+      params: { threadId: "foreign-thread", turnId: "foreign-turn", tool: "exec" },
+    });
+    expect(await waitForResponse(harness, "foreign-request")).toMatchObject({
+      id: "foreign-request",
+      result: { success: false },
+    });
+
+    authorized = false;
+    harness.send({
+      id: "terminal-child-request",
+      method: "item/tool/call",
+      params: { threadId: "child-thread", turnId: "child-turn-2", tool: "exec" },
+    });
+    expect(await waitForResponse(harness, "terminal-child-request")).toMatchObject({
+      id: "terminal-child-request",
+      result: { success: false },
+    });
+    expect(requests).toHaveBeenCalledOnce();
   });
 
   it("warns once only for a thread-correlated stale turn notification", async () => {

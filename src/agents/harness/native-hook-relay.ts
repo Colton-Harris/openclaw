@@ -170,7 +170,18 @@ function registerNativeHookRelayInternal(
 ): ActiveNativeHookRelayRegistrationHandle {
   pruneExpiredNativeHookRelays();
   pruneNativeHookRelayPermissionAllowAlways();
-  const relayId = normalizeRelayKey(params.relayId, "id") ?? randomUUID();
+  const requestedRelayId = normalizeRelayKey(params.relayId, "id") ?? randomUUID();
+  // A successfully yielded Codex parent can leave this registration serving
+  // admitted native children. Do not replace that relay when a new foreground
+  // turn for the same session starts: child hook commands still carry the old
+  // id. A fresh id gives the foreground turn its own bridge while the retained
+  // registration remains authoritative for those children.
+  const existing = relays.get(requestedRelayId);
+  const existingLifetime = existing ? readRelayLifetime(existing) : undefined;
+  const relayId =
+    existingLifetime?.retained && existingLifetime.retention && !existingLifetime.foregroundOpen
+      ? `${requestedRelayId}-${randomUUID()}`
+      : requestedRelayId;
   const generation = normalizeRelayKey(params.generation, "generation") ?? randomUUID();
   const generationMismatchGraceMs = normalizePositiveInteger(params.generationMismatchGraceMs, 0);
   const now = Date.now();

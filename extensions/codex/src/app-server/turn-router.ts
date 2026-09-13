@@ -59,6 +59,8 @@ export type CodexThreadRouteReservation = {
 
 type RouteOptions = Partial<CodexThreadRouteHandlers> & {
   threadId: string;
+  /** Allows a retained parent route to service only its claimed direct children. */
+  authorizeChildThread?: (threadId: string) => boolean;
   releaseOn?: AbortSignal;
 };
 
@@ -99,6 +101,7 @@ type Route = {
   completedNativeTurnIds: Set<string>;
   ignoredTurnNotificationKeys: Set<string>;
   detachReleaseOn?: () => void;
+  authorizeChildThread?: (threadId: string) => boolean;
 };
 type NativeTurnCompletionWatcher = {
   turnId: string;
@@ -157,6 +160,7 @@ class ClientTurnRouter implements CodexAppServerTurnRouter {
       notificationTail: Promise.resolve(),
       completedNativeTurnIds: new Set(),
       ignoredTurnNotificationKeys: new Set(),
+      authorizeChildThread: options.authorizeChildThread,
     };
     this.routes.set(threadId, route);
     if (options.onNotification || options.onRequest) {
@@ -410,7 +414,20 @@ class ClientTurnRouter implements CodexAppServerTurnRouter {
     if (!scope.threadId) {
       return undefined;
     }
-    const route = this.routes.get(scope.threadId);
+    let route = this.routes.get(scope.threadId);
+    let childRequest = false;
+    if (!route) {
+      // Native children share the parent's app-server client but have their
+      // own thread/turn ids. Only a live, exact direct-child claim may borrow
+      // the parent's request handler; never infer ownership from ancestry.
+      for (const candidate of this.routes.values()) {
+        if (candidate.authorizeChildThread?.(scope.threadId)) {
+          route = candidate;
+          childRequest = true;
+          break;
+        }
+      }
+    }
     if (!route) {
       return undefined;
     }
@@ -438,7 +455,7 @@ class ClientTurnRouter implements CodexAppServerTurnRouter {
         return undefined;
       }
     }
-    if (route.gate === "bound" && scope.turnId && scope.turnId !== route.turnId) {
+    if (!childRequest && route.gate === "bound" && scope.turnId && scope.turnId !== route.turnId) {
       return undefined;
     }
     if (!(await waitForPromiseOrAbort(this.waitForNotifications(route), requestSignal))) {
