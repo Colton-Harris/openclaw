@@ -1,4 +1,5 @@
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodexAppServerClient } from "./client.js";

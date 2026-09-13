@@ -220,7 +220,7 @@ class ClientTurnRouter implements CodexAppServerTurnRouter {
     }
     // Resume discovers the active turn only after its route starts buffering;
     // preserve an exact completion that arrived before the watcher could exist.
-    if (this.routes.get(threadId)?.completedNativeTurnIds.has(turnId)) {
+    if (this.routes.get(threadId)?.completedNativeTurnIds.delete(turnId)) {
       return {
         completion: Promise.resolve(true),
         state: "confirmed",
