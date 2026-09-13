@@ -94,6 +94,11 @@ export async function readMemoryFile(params: {
   if (!rawPath) {
     throw new Error("path required");
   }
+  if (rawPath.endsWith(".jsonl")) {
+    throw new Error(
+      "memory_get reads Markdown memory files; use sessions_history for session transcripts",
+    );
+  }
   const absPath = path.isAbsolute(rawPath)
     ? path.resolve(rawPath)
     : path.resolve(params.workspaceDir, rawPath);
