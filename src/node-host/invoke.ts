@@ -473,7 +473,7 @@ async function sendExecFinishedEvent(
   );
 }
 
-async function runViaMacAppExecHost(params: {
+export async function runViaMacAppExecHost(params: {
   approvals: ExecApprovalsResolved;
   request: ExecHostRequest;
   signal?: AbortSignal;
@@ -483,6 +483,7 @@ async function runViaMacAppExecHost(params: {
     socketPath: approvals.socketPath,
     token: approvals.token,
     request,
+    timeoutMs: request.timeoutMs ?? undefined,
     signal: params.signal,
   });
 }
