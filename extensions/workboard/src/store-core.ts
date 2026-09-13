@@ -1046,6 +1046,11 @@ export class WorkboardCoreStore extends WorkboardStoreRuntime {
   }
 
   private async dependencyTargetStatus(card: WorkboardCard, now: number): Promise<WorkboardStatus> {
+    // A deliberate backlog move is sticky. Automatic dependency promotion must
+    // not turn an explicit founder/operator "park this" into runnable work.
+    if (card.metadata?.automation?.parkedAt && isDependencyPromotableStatus(card.status)) {
+      return card.status;
+    }
     const scheduledAt = card.metadata?.automation?.scheduledAt;
     const parents = cardParentIds(card);
     if (card.status === "scheduled" && !scheduledAt) {
