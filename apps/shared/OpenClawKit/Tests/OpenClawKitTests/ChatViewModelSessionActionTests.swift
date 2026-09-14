@@ -1474,6 +1474,215 @@ struct ChatViewModelSessionActionTests {
         #expect(viewModel.hasGatewayConfirmedActiveRunForCurrentSession)
     }
 
+    @Test func `a configured main alias retires its rejection from the listed key`() async {
+        let branches = self.branches()
+        // `mainKey == "work"`, so the session the UI presents as `main` under
+        // agent `alpha` is listed as `agent:alpha:work`.
+        let defaults = OpenClawChatSessionsDefaults(
+            model: nil,
+            contextTokens: nil,
+            mainSessionKey: "work")
+        var stalePreRunRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        stalePreRunRow.agentId = "alpha"
+        var idleRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        idleRow.agentId = "alpha"
+        let transport = SessionActionTransport(
+            branchSwitchError: GatewayResponseError(
+                method: "sessions.branches.switch",
+                code: "UNAVAILABLE",
+                message: "Branch switch is temporarily blocked.",
+                details: ["reason": AnyCodable("session-run-active")]),
+            // The refresh inside the rejection handler fails, so only the
+            // rejection knows the session is busy; the later list is
+            // authoritative that the run finished.
+            sessionListFailureIndices: [0],
+            sessionListResponses: [
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 1,
+                    defaults: defaults,
+                    sessions: [stalePreRunRow]),
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 1,
+                    defaults: defaults,
+                    sessions: [idleRow]),
+            ],
+            branches: branches)
+        let viewModel = OpenClawChatViewModel(sessionKey: "main", transport: transport)
+        viewModel.syncDeliveryIdentity(activeAgentId: "alpha", sessionRoutingContract: nil)
+        viewModel.sessionDefaults = defaults
+        viewModel.sessionBranches = branches
+        viewModel.sessions = [stalePreRunRow]
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(await transport.switchedBranches().count == 1)
+        #expect(viewModel.canSwitchSessionBranch == false)
+        // The rejection must be retained under the canonical routed key the
+        // list publishes, not under the presentation alias. Retaining
+        // `agent:alpha:main` here is what stranded the picker: every
+        // reconciliation source names `agent:alpha:work`, so the subtraction
+        // never matched and the control stayed disabled after completion.
+        #expect(viewModel.gatewayConfirmedActiveRunIdentities == [
+            GatewayRunLivenessIdentity(canonicalSessionKey: "agent:alpha:work", agentID: nil),
+        ])
+
+        await viewModel.fetchSessions(limit: 50)
+
+        #expect(viewModel.hasGatewayConfirmedActiveRunForCurrentSession == false)
+        #expect(viewModel.canSwitchSessionBranch)
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(await transport.switchedBranches().count == 2)
+    }
+
+    @Test func `a configured main alias resolves its rejection without a listed row`() async {
+        let branches = self.branches()
+        let defaults = OpenClawChatSessionsDefaults(
+            model: nil,
+            contextTokens: nil,
+            mainSessionKey: "work")
+        var idleRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        idleRow.agentId = "alpha"
+        let transport = SessionActionTransport(
+            branchSwitchError: GatewayResponseError(
+                method: "sessions.branches.switch",
+                code: "UNAVAILABLE",
+                message: "Branch switch is temporarily blocked.",
+                details: ["reason": AnyCodable("session-run-active")]),
+            sessionListFailureIndices: [0],
+            sessionListResponses: [
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 0,
+                    defaults: defaults,
+                    sessions: []),
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 1,
+                    defaults: defaults,
+                    sessions: [idleRow]),
+            ],
+            branches: branches)
+        let viewModel = OpenClawChatViewModel(sessionKey: "main", transport: transport)
+        viewModel.syncDeliveryIdentity(activeAgentId: "alpha", sessionRoutingContract: nil)
+        viewModel.sessionDefaults = defaults
+        viewModel.sessionBranches = branches
+        // A bounded or failed refresh can leave the session with no row at all.
+        // The identity must not depend on the row being there: a fact retained
+        // while the row is missing has to be the same fact the row retires.
+        viewModel.sessions = []
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(viewModel.canSwitchSessionBranch == false)
+        #expect(viewModel.gatewayConfirmedActiveRunIdentities == [
+            GatewayRunLivenessIdentity(canonicalSessionKey: "agent:alpha:work", agentID: nil),
+        ])
+
+        await viewModel.fetchSessions(limit: 50)
+
+        #expect(viewModel.hasGatewayConfirmedActiveRunForCurrentSession == false)
+        #expect(viewModel.canSwitchSessionBranch)
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(await transport.switchedBranches().count == 2)
+    }
+
+    @Test func `a configured main alias retires its rejection from idle history`() async {
+        let branches = self.branches()
+        let defaults = OpenClawChatSessionsDefaults(
+            model: nil,
+            contextTokens: nil,
+            mainSessionKey: "work")
+        var stalePreRunRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        stalePreRunRow.agentId = "alpha"
+        let transport = SessionActionTransport(
+            branchSwitchError: GatewayResponseError(
+                method: "sessions.branches.switch",
+                code: "UNAVAILABLE",
+                message: "Branch switch is temporarily blocked.",
+                details: ["reason": AnyCodable("session-run-active")]),
+            // No canned responses, so every sessions.list throws. Recovery here
+            // depends only on history, which is authoritative for the session it
+            // was requested for whether or not that session has a row.
+            sessionListResponses: [],
+            branches: branches)
+        let viewModel = OpenClawChatViewModel(sessionKey: "main", transport: transport)
+        viewModel.syncDeliveryIdentity(activeAgentId: "alpha", sessionRoutingContract: nil)
+        viewModel.sessionDefaults = defaults
+        viewModel.sessionBranches = branches
+        viewModel.sessions = [stalePreRunRow]
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(viewModel.canSwitchSessionBranch == false)
+
+        viewModel.sessions = []
+        viewModel.applyInFlightRunSnapshot(
+            OpenClawChatHistoryPayload(
+                sessionKey: "main",
+                sessionId: nil,
+                messages: nil,
+                thinkingLevel: nil,
+                sessionInfo: OpenClawChatSessionInfo(hasActiveRun: false)),
+            for: viewModel.beginHistoryRequest())
+
+        #expect(viewModel.canSwitchSessionBranch)
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(await transport.switchedBranches().count == 2)
+    }
+
+    @Test func `a configured main alias retires its rejection from a lifecycle end`() async {
+        let branches = self.branches()
+        let defaults = OpenClawChatSessionsDefaults(
+            model: nil,
+            contextTokens: nil,
+            mainSessionKey: "work")
+        var stalePreRunRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        stalePreRunRow.agentId = "alpha"
+        var completedRow = self.entry(key: "agent:alpha:work", hasActiveRun: false)
+        completedRow.agentId = "alpha"
+        let transport = SessionActionTransport(
+            branchSwitchError: GatewayResponseError(
+                method: "sessions.branches.switch",
+                code: "UNAVAILABLE",
+                message: "Branch switch is temporarily blocked.",
+                details: ["reason": AnyCodable("session-run-active")]),
+            sessionListResponses: [],
+            branches: branches)
+        let viewModel = OpenClawChatViewModel(sessionKey: "main", transport: transport)
+        viewModel.syncDeliveryIdentity(activeAgentId: "alpha", sessionRoutingContract: nil)
+        viewModel.sessionDefaults = defaults
+        viewModel.sessionBranches = branches
+        viewModel.sessions = [stalePreRunRow]
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(viewModel.canSwitchSessionBranch == false)
+
+        viewModel.handleTransportEvent(.sessionsChanged(OpenClawChatSessionsChangedEvent(
+            sessionKey: "agent:alpha:work",
+            reason: "run",
+            phase: "end",
+            session: completedRow)))
+
+        #expect(viewModel.canSwitchSessionBranch)
+
+        await viewModel.switchToBranch("leaf-new")
+
+        #expect(await transport.switchedBranches().count == 2)
+    }
+
     @Test func `branch switch clears retained active run state on authoritative completion`() async {
         let branches = self.branches()
         let staleInactiveSession = self.entry(key: "main", hasActiveRun: false)

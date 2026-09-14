@@ -721,8 +721,10 @@ extension OpenClawChatViewModel {
 
     /// Resolves the immutable routed identity that owns a session's liveness
     /// facts, so a retained rejection cannot follow a presentation alias onto
-    /// another agent. `listedKey` supplies the canonical key when the session is
-    /// present in `sessions`; the routed agent is used when it is not.
+    /// another agent. Every source of that state — the rejection itself, idle
+    /// lists, lifecycle snapshots, and history — routes through this one
+    /// resolver, so no two of them can disagree about which routed session a
+    /// liveness fact belongs to.
     func gatewayRunLivenessIdentity(
         forSessionKey sessionKey: String,
         agentID: String?,
@@ -730,7 +732,10 @@ extension OpenClawChatViewModel {
     {
         let target = self.modelPatchTarget(
             sessionKey: sessionKey,
-            canonicalSessionKey: listedKey,
+            canonicalSessionKey: self.canonicalLivenessSessionKey(
+                forSessionKey: sessionKey,
+                agentID: agentID,
+                listedKey: listedKey),
             agentID: agentID,
             // Excluded on purpose: a mutable contract must not change the
             // identity of a fact that is already retained.
@@ -740,11 +745,87 @@ extension OpenClawChatViewModel {
             agentID: target.agentID)
     }
 
+    /// The canonical gateway session key a presentation key names.
+    ///
+    /// `main` is a presentation alias, and a deployment may configure the main
+    /// session under a different key: with `mainKey == "work"`, the session the
+    /// UI shows as `main` is listed as `agent:<id>:work`. An exact-key lookup
+    /// misses that row, so a rejection would retain `agent:<id>:main` while the
+    /// idle lists, lifecycle snapshots, and history that read the row reconcile
+    /// `agent:<id>:work` — the subtraction would never match and the picker
+    /// would stay disabled after the run finished.
+    ///
+    /// Resolution therefore expands the configured alias before reading
+    /// `sessions`, which also yields the same key when the session has no row
+    /// at all: a failed or bounded refresh must not change the identity of a
+    /// fact that is already retained.
+    ///
+    /// `listedKey` short-circuits the lookup for callers that already hold the
+    /// authoritative row, whose own key is canonical by definition.
+    func canonicalLivenessSessionKey(
+        forSessionKey sessionKey: String,
+        agentID: String?,
+        listedKey: String? = nil) -> String
+    {
+        let presentationKey = sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let listedKey = listedKey?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !listedKey.isEmpty
+        {
+            return listedKey
+        }
+        let canonicalKey = self.expandingConfiguredMainSessionAlias(presentationKey)
+        if let listed = self.sessions.first(where: { $0.key == canonicalKey })?.key {
+            return listed
+        }
+        if canonicalKey != presentationKey,
+           let listed = self.sessions.first(where: { $0.key == presentationKey })?.key
+        {
+            return listed
+        }
+        if let aliased = self.sessions.first(where: {
+            Self.matchesCurrentSessionKey(
+                incoming: $0.key,
+                agentId: $0.agentId,
+                current: canonicalKey,
+                mainSessionKey: self.resolvedMainSessionKey,
+                activeAgentId: agentID ?? self.activeAgentId)
+        })?.key {
+            return aliased
+        }
+        // No row: the expanded alias is still the key the Gateway routes by, so
+        // an absent session resolves to the identity its row would have carried.
+        return canonicalKey
+    }
+
+    /// Rewrites a presentation `main` — bare, or as the tail of an
+    /// `agent:<id>:main` wrapper — to the configured main session key. Every
+    /// other key, and the default `main` configuration, are returned unchanged.
+    private func expandingConfiguredMainSessionAlias(_ sessionKey: String) -> String {
+        let configuredMainKey = String(
+            self.resolvedMainSessionKey
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+                .last ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !configuredMainKey.isEmpty, configuredMainKey.lowercased() != "main" else {
+            return sessionKey
+        }
+        let parts = sessionKey.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        if parts.count == 3, parts[0].lowercased() == "agent" {
+            guard parts[2].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "main"
+            else {
+                return sessionKey
+            }
+            return "agent:\(parts[1]):\(configuredMainKey)"
+        }
+        guard sessionKey.lowercased() == "main" else { return sessionKey }
+        return configuredMainKey
+    }
+
     func gatewayRunLivenessIdentity(for session: SessionSnapshot) -> GatewayRunLivenessIdentity {
         self.gatewayRunLivenessIdentity(
             forSessionKey: session.key,
-            agentID: session.deliveryAgentID ?? session.agentID,
-            listedKey: self.sessions.first(where: { $0.key == session.key })?.key)
+            agentID: session.deliveryAgentID ?? session.agentID)
     }
 
     /// Records the liveness the Gateway asserted when it refused a mutation.
