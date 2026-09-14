@@ -174,10 +174,11 @@ export async function prepareCodexAttemptTurnRequest(
       const registration = inferenceRoute.context.register({
         threadId: resourceState.thread.threadId,
         text:
+          // The skill catalog rides the thread developer carrier, not this
+          // parent-local relay, so it is deliberately absent here.
           buildCodexParentLocalInstructions(runtimeParams, {
             turnScopedDeveloperInstructions:
               workspaceBootstrapContext.turnScopedDeveloperInstructions,
-            skillsCollaborationInstructions: context.skillsCollaborationInstructions,
             memoryCollaborationInstructions:
               workspaceBootstrapContext.memoryCollaborationInstructions,
           }) ?? "",
