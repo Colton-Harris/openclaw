@@ -123,6 +123,11 @@ describe("Codex app-server skill catalog delivery", () => {
         options: { compact?: boolean } = {},
       ) => {
         const params = createParams(sessionFile, workspaceDir, { sessionKey, runId });
+        // Compaction runs the real before_compaction history read, whose first
+        // worker start costs several seconds. The 5s default attempt budget
+        // expires inside it and aborts projection before the catalog restore,
+        // so this lane needs the same budget as the native compaction tests.
+        params.timeoutMs = 60_000;
         params.skillsSnapshot = catalog ? { prompt: catalog, skills: [] } : undefined;
         const turnStartsBefore = turnStarts();
         const run = runCodexAppServerAttempt(params);
@@ -192,6 +197,9 @@ describe("Codex app-server skill catalog delivery", () => {
       harness.requests.filter(({ method }) => method === "turn/start").length;
     const runTurn = async (runId: string, catalog: string, options: { compact?: boolean } = {}) => {
       const params = createParams(sessionFile, workspaceDir, { sessionKey, runId });
+      // Same real before_compaction history read as the case above; the default
+      // 5s attempt budget expires inside it.
+      params.timeoutMs = 60_000;
       params.skillsSnapshot = { prompt: catalog, skills: [] };
       const turnStartsBefore = turnStarts();
       const run = runCodexAppServerAttempt(params);
