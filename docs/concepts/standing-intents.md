@@ -25,11 +25,13 @@ Put aspirations in `MEMORY.md`, a project note, or another maintained Markdown f
 
 Standing intents are owner-directed memory. Channel owners recognized by
 `commands.ownerAllowFrom` can use the `intent` tool to create, list, or cancel
-them; other senders do not receive that tool. Authenticated Gateway/Control UI
-administrators and the local CLI can inspect and cancel existing intents, but
-creation requires an authenticated channel and sender identity. If either is
-missing, OpenClaw refuses creation and asks the operator to retry from an
-authenticated channel conversation.
+them; other senders do not receive that tool. Creation requires an authenticated
+channel and sender identity. In the Control UI, TUI, and native apps, the sender is
+the verified Gateway user profile of the connection (the same identity that
+attributes the transcript turn), and a `conversation` scope means the current chat
+session. A connection without a verified profile can still inspect and cancel
+existing intents, but OpenClaw refuses creation and asks the operator to retry from
+an authenticated conversation.
 
 Ask the agent to create the intent and name the event clearly:
 

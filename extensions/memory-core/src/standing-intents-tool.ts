@@ -9,6 +9,7 @@ import {
   encodeStandingIntentChannelScope,
   encodeStandingIntentSenderScope,
   listStandingIntents,
+  resolveStandingIntentConversationId,
   type IntentScope,
   type StandingIntentStatus,
 } from "./standing-intents.js";
@@ -141,6 +142,8 @@ export function createStandingIntentTool(options: {
   agentId: string;
   sourceSessionId?: string;
   conversationId?: string;
+  /** Session key of the creating turn; identifies the conversation for internal chat turns. */
+  sessionKey?: string;
   provider?: string;
   accountId?: string;
   senderId?: string;
@@ -225,7 +228,11 @@ export function createStandingIntentTool(options: {
                   scope,
                   provider: options.provider ?? "",
                   accountId: options.accountId,
-                  conversationId: options.conversationId,
+                  conversationId: resolveStandingIntentConversationId({
+                    provider: options.provider,
+                    conversationId: options.conversationId,
+                    sessionKey: options.sessionKey,
+                  }),
                 }),
           senderScope:
             senderScope === "anyone"

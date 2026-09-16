@@ -377,7 +377,7 @@ describe("prepareChatSendUserTurn", () => {
     },
   );
 
-  it("carries pre-staged media and device ownership without UI sender decoration", async () => {
+  it("carries pre-staged media and device ownership with the verified profile as sender", async () => {
     const { controller, readInput } = createUserTurnInputController();
     const prepared = prepareChatSendUserTurn({
       request: {
@@ -448,7 +448,9 @@ describe("prepareChatSendUserTurn", () => {
         actor: { type: "human", id: "profile-ada" },
       },
     });
-    expect(prepared.ctx).not.toHaveProperty("SenderId");
+    // The verified profile is the sender; the Control UI client label never is.
+    expect(prepared.ctx).toMatchObject({ SenderId: "profile-ada", SenderName: "Ada" });
+    expect(prepared.ctx).not.toHaveProperty("SenderUsername");
     expect(prepared.queuedFollowupOwnerKey).toBe("device:device-1");
     await expect(readInput()).resolves.toEqual(controller.baseInput);
   });

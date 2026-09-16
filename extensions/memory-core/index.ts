@@ -120,6 +120,7 @@ function createLazyStandingIntentTool(
       module.createStandingIntentTool({
         agentId,
         ...(ctx.sessionId ? { sourceSessionId: ctx.sessionId } : {}),
+        ...(ctx.sessionKey ? { sessionKey: ctx.sessionKey } : {}),
         ...(ctx.nativeChannelId ? { conversationId: ctx.nativeChannelId } : {}),
         ...(provider ? { provider } : {}),
         ...(ctx.agentAccountId ? { accountId: ctx.agentAccountId } : {}),
@@ -306,6 +307,7 @@ export default definePluginEntry({
             : {}),
           ...(ctx.accountId ? { accountId: ctx.accountId } : {}),
           ...(ctx.senderId ? { senderId: ctx.senderId } : {}),
+          ...(ctx.sessionKey ? { sessionKey: ctx.sessionKey } : {}),
         });
         const prependContext = module.buildStandingIntentContext(intents);
         return prependContext ? { prependContext } : undefined;

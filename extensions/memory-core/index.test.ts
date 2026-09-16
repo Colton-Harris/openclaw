@@ -1,10 +1,18 @@
 // Memory Core tests cover index plugin behavior.
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OpenClawPluginApi, OpenClawPluginCommandDefinition } from "openclaw/plugin-sdk/core";
 import type { MemoryPluginRuntime } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveOpenClawAgentSqlitePath } from "openclaw/plugin-sdk/sqlite-runtime";
+import {
+  closeOpenClawAgentDatabasesForTest,
+  closeOpenClawStateDatabaseForTest,
+} from "openclaw/plugin-sdk/sqlite-runtime-testing";
+import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMemoryFlushPlan } from "./src/flush-plan.js";
 import { buildMemoryPromptSection } from "./src/memory-tool-contract.js";
 import type { MemoryCoreRuntimeHost } from "./src/memory/runtime-host.js";
@@ -240,6 +248,7 @@ describe("buildPromptSection", () => {
 });
 
 describe("memory-core plugin runtime registration", () => {
+  const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -300,6 +309,89 @@ describe("memory-core plugin runtime registration", () => {
     expect(toolNames).toContain("intent");
     expect(hooks).toContain("before_prompt_build");
     expect(subagentRun).not.toHaveBeenCalled();
+  });
+
+  it("scopes internal chat intents to the verified sender and session key end to end", async () => {
+    const stateDir = tempDirs.make("openclaw-memory-core-intent-");
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    await fs.mkdir(path.dirname(resolveOpenClawAgentSqlitePath({ agentId: "main" })), {
+      recursive: true,
+    });
+    const warn = vi.fn();
+    let intentFactory: ((ctx: unknown) => unknown) | undefined;
+    let promptHook: ((event: unknown, ctx: unknown) => Promise<unknown>) | undefined;
+    try {
+      plugin.register(
+        createTestPluginApi({
+          config: {},
+          runtime: hostRuntime,
+          logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn },
+          registerTool(factory, options) {
+            if (options?.names?.includes("intent") && typeof factory === "function") {
+              intentFactory = factory as (ctx: unknown) => unknown;
+            }
+          },
+          on(hookName, handler) {
+            if (hookName === "before_prompt_build") {
+              promptHook = handler as unknown as typeof promptHook;
+            }
+          },
+        }),
+      );
+      if (!intentFactory || !promptHook) {
+        throw new Error("expected standing-intent tool factory and prompt hook");
+      }
+
+      // Same session key on the creating turn (tool context) and the matching turn (hook context).
+      const turn = { agentId: "main", sessionKey: "agent:main:dashboard:conv-a", sessionId: "s-a" };
+      const tool = intentFactory({
+        config: {},
+        senderIsOwner: true,
+        messageChannel: "webchat",
+        requesterSenderId: "gateway-owner",
+        ...turn,
+      }) as {
+        execute: (
+          id: string,
+          params: unknown,
+        ) => Promise<{ content: Array<{ type: string; text?: string }> }>;
+      };
+      const created = await tool.execute("create-1", {
+        action: "create",
+        description: "Recall the correction before answering.",
+        triggerKeywords: ["correction recall"],
+        scope: "conversation",
+      });
+      const createdJson = JSON.parse(
+        created.content.find((entry) => entry.type === "text")?.text ?? "null",
+      ) as { intent?: { channelScope?: string; senderScope?: string } };
+      expect(createdJson.intent).toMatchObject({
+        channelScope: "agent:main:dashboard:conv-a",
+        senderScope: "gateway-owner",
+      });
+
+      const event = { prompt: "please apply the correction recall", messages: [] };
+      const matchingTurn = {
+        trigger: "user",
+        messageProvider: "webchat",
+        senderId: "gateway-owner",
+        ...turn,
+      };
+      await expect(
+        promptHook(event, { ...matchingTurn, sessionKey: "agent:main:dashboard:conv-b" }),
+      ).resolves.toBeUndefined();
+      await expect(
+        promptHook(event, { ...matchingTurn, senderId: "profile-bob" }),
+      ).resolves.toBeUndefined();
+      await expect(promptHook(event, matchingTurn)).resolves.toEqual({
+        prependContext: expect.stringContaining("Recall the correction before answering."),
+      });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      closeOpenClawAgentDatabasesForTest();
+      closeOpenClawStateDatabaseForTest();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("scopes both reply hooks to scheduled turns across three registrations", () => {

@@ -62,6 +62,33 @@ export function gatewayClientSessionCreator(client: GatewayClient | null) {
     : undefined;
 }
 
+/**
+ * Sender fields for a chat.send turn. The verified connection identity that
+ * attributes the transcript turn is authoritative for every client, so sender-scoped
+ * features (standing intents, requester-scoped MCP, owner matching) see the same
+ * person the transcript records. The self-declared client label is never identity:
+ * it only fills the legacy fields for identity-less non-UI clients, and operator UI
+ * labels never become a sender.
+ */
+function resolveChatSendCallerSenderFields(
+  client: GatewayClient | null,
+  clientInfo: GatewayClientInfo | undefined,
+): { SenderId?: string; SenderName?: string; SenderUsername?: string } {
+  const sender = gatewayClientSenderFields(client).sender;
+  const senderId = normalizeOptionalString(sender?.id);
+  if (senderId) {
+    const senderName = normalizeOptionalString(sender?.name);
+    return { SenderId: senderId, ...(senderName ? { SenderName: senderName } : {}) };
+  }
+  return isOperatorUiClient(clientInfo)
+    ? {}
+    : {
+        SenderId: clientInfo?.id,
+        SenderName: clientInfo?.displayName,
+        SenderUsername: clientInfo?.displayName,
+      };
+}
+
 /** Authenticated ingress facts shared by chat execution and its current caller controls. */
 export function resolveChatSendCallerContext(
   client: GatewayClient | null | undefined,
@@ -74,13 +101,7 @@ export function resolveChatSendCallerContext(
     OriginatingChannel: originatingChannel,
     ChatType: "direct",
     ApprovalReviewerDeviceId: normalizeOptionalString(client?.connect?.device?.id),
-    ...(!isOperatorUiClient(clientInfo)
-      ? {
-          SenderId: clientInfo?.id,
-          SenderName: clientInfo?.displayName,
-          SenderUsername: clientInfo?.displayName,
-        }
-      : {}),
+    ...resolveChatSendCallerSenderFields(client ?? null, clientInfo),
     GatewayClientScopes: client?.connect?.scopes ?? [],
     GatewayClientCaps: client?.connect?.caps ?? [],
   };

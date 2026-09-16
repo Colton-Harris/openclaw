@@ -63,6 +63,7 @@ import {
 } from "../../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseByPath } from "../../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
+import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 import { normalizeSessionDeliveryState } from "../../utils/delivery-context.shared.js";
 import { consumeCronCreatorAuthorityGrant } from "../cron-creator-authority-grant.js";
@@ -7964,6 +7965,41 @@ describe("chat.send local operator client sender context", () => {
     expect(mockState.lastDispatchCtx?.SenderName).toBeUndefined();
     expect(mockState.lastDispatchCtx?.SenderUsername).toBeUndefined();
     expect(mockState.lastTaskSuggestionDeliveryMode).toBe("gateway");
+  });
+
+  it("injects the verified profile as sender for Control UI clients, never the client label", async () => {
+    await createGatewayUserTurnSqliteFixture("openclaw-chat-send-control-ui-profile-sender-");
+    const { send } = createChatRequestFixture();
+    const profile = ensureProfileForEmail("control-ui-owner@example.test");
+
+    await send({
+      idempotencyKey: "idem-control-ui-profile-sender",
+      message: "hello from a verified control ui",
+      client: {
+        authenticatedUserProfile: {
+          profileId: profile.id,
+          displayName: "Owner",
+          hasAvatar: false,
+          updatedAt: profile.updatedAt,
+        },
+        connect: {
+          client: {
+            id: GATEWAY_CLIENT_NAMES.CONTROL_UI,
+            mode: GATEWAY_CLIENT_MODES.WEBCHAT,
+            displayName: "Forged Label",
+            version: "dev",
+            platform: "web",
+          },
+          caps: [GATEWAY_CLIENT_CAPS.TASK_SUGGESTIONS],
+          scopes: ["operator.admin"],
+        },
+      },
+      expectBroadcast: false,
+    });
+
+    expect(mockState.lastDispatchCtx?.SenderId).toBe(profile.id);
+    expect(mockState.lastDispatchCtx?.SenderName).toBe("Owner");
+    expect(mockState.lastDispatchCtx?.SenderUsername).toBeUndefined();
   });
 
   it.each([

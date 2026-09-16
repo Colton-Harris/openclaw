@@ -73,6 +73,32 @@ export type IntentScope = "conversation" | "channel" | "anywhere";
 type StoredChannelScope = ["v1", "channel" | "conversation", string, string, string];
 type StoredSenderScope = ["v1", string, string, string];
 
+// OpenClaw's internal chat surface (Control UI, TUI, native apps). Its turns carry no
+// native conversation id; the durable session key is the conversation, matching the
+// core message-hook conversation contract for the internal channel.
+const INTERNAL_CHAT_PROVIDER = "webchat";
+
+function isInternalChatProvider(provider: string | undefined): boolean {
+  return provider?.trim().toLowerCase() === INTERNAL_CHAT_PROVIDER;
+}
+
+/**
+ * Conversation identity used for `conversation` scoping on both the creating turn
+ * and the matching turn. Channel turns use their native conversation id; internal
+ * chat turns always use the session key so creation and matching agree regardless
+ * of which routing metadata the host attached to either turn.
+ */
+export function resolveStandingIntentConversationId(params: {
+  provider?: string;
+  conversationId?: string;
+  sessionKey?: string;
+}): string | undefined {
+  if (isInternalChatProvider(params.provider)) {
+    return params.sessionKey?.trim() || undefined;
+  }
+  return params.conversationId?.trim() || undefined;
+}
+
 function withStandingIntentDatabase<T>(agentId: string, callback: (db: DatabaseSync) => T): T {
   const db = openOpenClawAgentDatabase({ agentId }).db;
   ensureOpenClawAgentStandingIntentsSchema(db);
@@ -398,6 +424,8 @@ export function matchStandingIntents(params: {
   provider?: string;
   accountId?: string;
   senderId?: string;
+  /** Session key of the matching turn; identifies the conversation for internal chat turns. */
+  sessionKey?: string;
   nowMs?: number;
 }): StandingIntent[] {
   const promptTokens = new Set(tokenizeIntentText(params.prompt));
@@ -405,7 +433,11 @@ export function matchStandingIntents(params: {
   if (!ftsQuery) {
     return [];
   }
-  const channel = params.channel?.trim() || undefined;
+  const channel = resolveStandingIntentConversationId({
+    provider: params.provider,
+    conversationId: params.channel,
+    sessionKey: params.sessionKey,
+  });
   const provider = params.provider?.trim().toLowerCase() || undefined;
   const senderId = params.senderId?.trim() || undefined;
   const channelScopes = new Set<string>();
@@ -597,6 +629,8 @@ export function isEligibleStandingIntentTurn(ctx: {
   if (ctx.trigger !== "user" || (!ctx.sessionKey && !ctx.sessionId)) {
     return false;
   }
-  const provider = ctx.messageProvider?.trim().toLowerCase();
-  return provider === "webchat" || Boolean(ctx.channelId?.trim() || ctx.chatId?.trim());
+  return (
+    isInternalChatProvider(ctx.messageProvider) ||
+    Boolean(ctx.channelId?.trim() || ctx.chatId?.trim())
+  );
 }

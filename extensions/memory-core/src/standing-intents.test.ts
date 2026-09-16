@@ -24,6 +24,7 @@ import {
   isEligibleStandingIntentTurn,
   listStandingIntents,
   matchStandingIntents,
+  resolveStandingIntentConversationId,
   sweepStandingIntents,
 } from "./standing-intents.js";
 
@@ -543,5 +544,131 @@ describe("standing intents", () => {
     expect(context).toContain("Standing intent (created 1970-01-01):");
     expect(context?.length).toBeLessThanOrEqual(INTENT_INJECTION_MAX_CHARS);
     expect(context?.match(/Standing intent/g)).toHaveLength(2);
+  });
+
+  it("scopes internal chat conversations by session key on creation and matching", async () => {
+    const tool = createStandingIntentTool({
+      agentId: "main",
+      sourceSessionId: "session-a",
+      sessionKey: "agent:main:dashboard:conv-a",
+      provider: "webchat",
+      senderId: "gateway-owner",
+    });
+    const created = parseToolJson(
+      await tool.execute("create-webchat", {
+        action: "create",
+        description: "Recall the correction before answering.",
+        triggerKeywords: ["correction recall"],
+        scope: "conversation",
+        maxFires: 2,
+        cooldownSeconds: 60,
+      }),
+    );
+    expect(created.intent).toMatchObject({
+      scope: "conversation",
+      channelScope: "agent:main:dashboard:conv-a",
+      senderScope: "gateway-owner",
+      creatorSender: "gateway-owner",
+      sourceSessionId: "session-a",
+    });
+    expect(created.message).toContain("Intent is armed for this conversation.");
+
+    const match = (overrides: Partial<Parameters<typeof matchStandingIntents>[0]>) =>
+      matchStandingIntents({
+        agentId: "main",
+        prompt: "apply the correction recall now",
+        provider: "webchat",
+        sessionKey: "agent:main:dashboard:conv-a",
+        senderId: "gateway-owner",
+        nowMs: 2_000,
+        ...overrides,
+      });
+
+    expect(match({ sessionKey: "agent:main:dashboard:conv-b" })).toStrictEqual([]);
+    expect(match({ senderId: "profile-bob" })).toStrictEqual([]);
+    expect(match({ senderId: undefined })).toStrictEqual([]);
+    expect(match({ provider: "qa-channel", channel: "agent:main:dashboard:conv-a" })).toStrictEqual(
+      [],
+    );
+    // Routing metadata attached to an internal chat turn never replaces the session key.
+    expect(match({ channel: "route-target-7" }).map((intent) => intent.status)).toStrictEqual([
+      "fired",
+    ]);
+    expect(match({ nowMs: 61_999 })).toStrictEqual([]);
+    expect(match({ nowMs: 62_000 }).map((intent) => intent.status)).toStrictEqual(["done"]);
+    expect(match({ nowMs: 130_000 })).toStrictEqual([]);
+  });
+
+  it("requires a session key for internal chat conversation scope and ignores it for channels", async () => {
+    const webchatTool = createStandingIntentTool({
+      agentId: "main",
+      provider: "webchat",
+      senderId: "gateway-owner",
+    });
+    await expect(
+      webchatTool.execute("create-no-session", {
+        action: "create",
+        description: "No session.",
+        triggerKeywords: ["no session"],
+        scope: "conversation",
+      }),
+    ).rejects.toThrow("conversation identity is unavailable for this creating turn");
+    const channelScoped = parseToolJson(
+      await webchatTool.execute("create-channel", {
+        action: "create",
+        description: "Channel-wide reminder.",
+        triggerKeywords: ["channel wide"],
+        scope: "channel",
+      }),
+    );
+    expect(channelScoped.intent).toMatchObject({ scope: "channel", channelScope: "webchat" });
+    expect(
+      matchStandingIntents({
+        agentId: "main",
+        prompt: "channel wide",
+        provider: "webchat",
+        senderId: "gateway-owner",
+      }),
+    ).toHaveLength(1);
+
+    const channelTool = createStandingIntentTool({
+      agentId: "main",
+      provider: "qa-channel",
+      senderId: "alice",
+      sessionKey: "agent:main:qa-channel:group:room-1",
+    });
+    await expect(
+      channelTool.execute("create-channel-no-conversation", {
+        action: "create",
+        description: "Channel needs a native conversation.",
+        triggerKeywords: ["native conversation"],
+        scope: "conversation",
+      }),
+    ).rejects.toThrow("conversation identity is unavailable for this creating turn");
+    expect(listStandingIntents({ agentId: "main" })).toHaveLength(1);
+  });
+
+  it("resolves conversation identity per provider family", () => {
+    expect(
+      resolveStandingIntentConversationId({
+        provider: "WebChat",
+        conversationId: "route-7",
+        sessionKey: " agent:main:dashboard:conv-a ",
+      }),
+    ).toBe("agent:main:dashboard:conv-a");
+    expect(resolveStandingIntentConversationId({ provider: "webchat" })).toBeUndefined();
+    expect(
+      resolveStandingIntentConversationId({
+        provider: "discord",
+        conversationId: "room-1",
+        sessionKey: "agent:main:discord:channel:room-1",
+      }),
+    ).toBe("room-1");
+    expect(
+      resolveStandingIntentConversationId({
+        provider: "discord",
+        sessionKey: "agent:main:discord:channel:room-1",
+      }),
+    ).toBeUndefined();
   });
 });
