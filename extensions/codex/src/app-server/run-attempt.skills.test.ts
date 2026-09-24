@@ -44,7 +44,11 @@ describe("Codex app-server skill catalog delivery", () => {
         const metadata = { requestKind: "turn", threadId: "thread-1", generation };
         const parent = route.context.prepare(nativeBody, metadata);
         parent.assertCurrent();
-        received.push(String(parent.body.instructions));
+        const instructions = parent.body.instructions;
+        if (typeof instructions !== "string") {
+          throw new Error("Expected managed parent instructions to be a string");
+        }
+        received.push(instructions);
         // A continuation uses the same current registration even if native history
         // was rebuilt by compaction. Neither compaction nor children borrow it.
         expect(route.context.prepare(nativeBody, metadata).body).toEqual(parent.body);
