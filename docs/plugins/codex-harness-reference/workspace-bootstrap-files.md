@@ -48,23 +48,7 @@ Codex harness forwards the other bootstrap files as developer instructions:
   private relay leaves native base/catalog instructions and history intact,
   so newly delivered persona and user-profile context are not automatically
   inherited by native Codex subagents.
-- The compact loaded OpenClaw skills list is forwarded with the thread
-  developer instructions, after the generic policy, instead of the
-  parent-local layer. Model-owned collaboration-mode messages cannot replace
-  this catalog. The catalog is refreshable context rather than generic policy:
-  a changed catalog resumes a persistent thread through the normal policy
-  handoff, while a live incognito thread receives the complete current catalog
-  as an injected developer message and keeps its conversation. Compaction
-  rebuilds a thread's initial context from its creation-time developer
-  instructions and discards injected developer messages, so an incognito thread
-  whose catalog was refreshed in place is sent the current catalog again as soon
-  as a compaction completes, including a compaction inside a turn. That turn's
-  own continuation request may already have been built, so the model reliably
-  sees the restored catalog from the following request onward. A generic policy
-  change on a live incognito thread still refuses the turn. Native Codex
-  subagents can inherit the catalog with the parent thread's developer
-  instructions; this does not move workspace persona or memory context into
-  that carrier.
+- The compact loaded OpenClaw skills list uses the same parent-local layer.
 - Heartbeat turns receive generic initiative guidance through collaboration
   mode. Monitor cron scratch is appended to the heartbeat prompt instead of
   injected as workspace context.
@@ -100,8 +84,30 @@ same bounded instruction injection.
 Custom commands, Desktop attachments, external Unix/WebSocket connections,
 non-OpenAI native providers, custom upstream endpoints, unsupported native account
 modes, locked upstream configuration, and native `features.respect_system_proxy` profiles keep the legacy
-collaboration carrier, which model-owned catalog instructions
-can replace. A warning and unverified persona accounting identify that the
+collaboration carrier for persona and memory guidance, which model-owned catalog
+instructions can replace. A warning and unverified persona accounting identify that the
 workaround is not active. OpenClaw does not reroute or shut down those sessions.
 Previously embedded persona, conversation text, and explicit task handoffs are
 not removed from existing histories or full-history forks.
+
+### Skill catalogs without a managed relay
+
+On connections without a managed inference relay, the eligible OpenClaw skill
+catalog uses thread developer instructions instead of the replaceable
+collaboration carrier. Native children can inherit this fallback catalog.
+Managed connections keep their existing parent-only request-local catalog;
+skill changes do not resume their threads or write catalog history.
+
+For the fallback, a changed catalog cold-resumes the same persistent thread.
+A live incognito thread receives the complete current catalog through an
+injected developer message without changing its immutable generic policy.
+After automatic compaction, OpenClaw re-delivers edited or withdrawn catalogs.
+The immediate continuation can still use the creation-time catalog; restoration
+is guaranteed only for the following request. Standalone compaction invalidates
+the recorded delivery so the next turn refreshes it, including after a failed
+restore.
+
+Lightweight cron turns omit skills. On fallback connections sharing a thread
+with ordinary turns, that omission withdraws the thread-level catalog until the
+next ordinary turn. On managed connections it only omits the current request's
+catalog; it does not change native thread state.

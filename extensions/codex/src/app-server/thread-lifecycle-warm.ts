@@ -369,7 +369,8 @@ export async function tryReuseCodexLiveThread(
     const ephemeralPolicy = retainedThread.ephemeralPolicy;
     if (
       incognito &&
-      (!ephemeralPolicy || ephemeralPolicy.developerInstructions !== params.developerInstructions ||
+      (!ephemeralPolicy ||
+        ephemeralPolicy.developerInstructions !== params.developerInstructions ||
         getCodexInferenceThread(params.client, binding.threadId) !== params.inferenceRoute ||
         [...(params.inferenceProviderRoutes?.keys() ?? [])].some(
           (provider) =>

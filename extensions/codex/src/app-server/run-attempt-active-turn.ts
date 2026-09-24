@@ -28,12 +28,12 @@ import { isJsonObject } from "./protocol.js";
 import { readRecentCodexRateLimits } from "./rate-limit-cache.js";
 import { readBoundedCodexRemoteWorkspaceFile } from "./remote-workspace-media.js";
 import { mapCodexAppServerRemoteWorkspacePath } from "./remote-workspace-path.js";
+import { restoreCodexAttemptCompactionContext } from "./run-attempt-compaction.js";
 import type { CodexAttemptLifecycleController } from "./run-attempt-lifecycle-controller.js";
 import type { CodexAttemptNotificationController } from "./run-attempt-notification-controller.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import type { CodexStartedTurn } from "./run-attempt-turn-request.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
-import { restoreCodexThreadSkillsCatalogAfterCompaction } from "./thread-policy.js";
 import {
   codexTranscriptMirrorRuntime,
   createCodexAppServerUserMessagePersistenceNotifier,
@@ -70,7 +70,7 @@ export function activateCodexAttemptTurn(
     contextSessionKey,
     effectiveCwd,
   } = connection;
-  const { dynamicToolParams, compactionPlanState, computerContextEpoch, toolBridge } = attemptTools;
+  const { dynamicToolParams, toolBridge } = attemptTools;
   const {
     state,
     completion,
@@ -234,53 +234,7 @@ export function activateCodexAttemptTurn(
         : {}),
       ...(prepareNativeMcpAppResultDetails ? { prepareNativeMcpAppResultDetails } : {}),
       upstreamUserText,
-      onContextCompacted: async () => {
-        computerContextEpoch.value += 1;
-        delete computerContextEpoch.frameToolCallId;
-        delete computerContextEpoch.frameImageIdentity;
-        try {
-          await compactionPlanState.restore({
-            client: resourceState.client,
-            threadId: resourceState.thread.threadId,
-            timeoutMs: connection.appServer.requestTimeoutMs,
-            signal: runAbortController.signal,
-          });
-        } catch (error) {
-          embeddedAgentLog.warn("failed to restore Codex plan state after compaction", {
-            runId: params.runId,
-            threadId: resourceState.thread.threadId,
-            error: formatErrorMessage(error),
-          });
-        }
-        try {
-          // Compaction rebuilds initial context from the creation-time developer
-          // instructions, so a catalog refreshed in place is dropped here.
-          await restoreCodexThreadSkillsCatalogAfterCompaction({
-            client: resourceState.client,
-            threadId: resourceState.thread.threadId,
-            ephemeralPolicy: resourceState.thread.liveThreadEphemeralPolicy,
-            timeoutMs: connection.appServer.requestTimeoutMs,
-            signal: runAbortController.signal,
-          });
-        } catch (error) {
-          // Nothing else re-delivers this catalog, so the record must name what
-          // compaction actually restored. Claiming the refresh is still live
-          // would make every later turn skip it and strand the conversation on
-          // the creation-time catalog.
-          const ephemeralPolicy = resourceState.thread.liveThreadEphemeralPolicy;
-          if (ephemeralPolicy) {
-            resourceState.thread.liveThreadEphemeralPolicy = {
-              ...ephemeralPolicy,
-              skillsInstructions: ephemeralPolicy.nativeSkillsInstructions,
-            };
-          }
-          embeddedAgentLog.warn("failed to restore Codex skill catalog after compaction", {
-            runId: params.runId,
-            threadId: resourceState.thread.threadId,
-            error: formatErrorMessage(error),
-          });
-        }
-      },
+      onContextCompacted: () => restoreCodexAttemptCompactionContext(resources),
     },
   );
   const activeProjector = projectorRef.current;

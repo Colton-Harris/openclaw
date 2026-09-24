@@ -472,9 +472,9 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
   const buildRenderedCodexDeveloperInstructions = () =>
     joinPresentSections(
       turnState.promptBuild.developerInstructions,
-      skillsInstructions,
+      parentLocalEgress ? undefined : skillsInstructions,
       (parentLocalEgress
-        ? buildCodexParentLocalInstructions(params, parentLocalContext)
+        ? buildCodexParentLocalInstructions(params, { ...parentLocalContext, skillsInstructions })
         : buildTurnCollaborationMode(params, parentLocalContext).settings.developer_instructions) ??
         undefined,
     );

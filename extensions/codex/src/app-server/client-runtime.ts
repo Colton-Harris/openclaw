@@ -12,7 +12,10 @@ import {
   hasSiblingThreadWork,
   hasThreadOwnership,
   invalidateThreadOwnership,
+  revertRetainedThreadSkillsCatalog,
   type RetainedLiveThread,
+  type CodexEphemeralThreadPolicy,
+  type CodexAppServerLiveThreadOwnership,
   type ThreadOwnershipState,
   type ThreadOwnerToken,
   type ThreadReleaseTransition,
@@ -33,33 +36,6 @@ type ClientRuntime = ThreadOwnershipState & {
   sessionMetadata: Map<string, { sessionsRoot: string; rolloutPath: string; metadata: JsonObject }>;
   workspaceReferences: Map<string, { digest?: string; needsReintroduction: boolean }>;
   evictionTimer?: ReturnType<typeof setTimeout>;
-};
-
-/**
- * Exact lifecycle inputs a live ephemeral thread was told. The generic policy is
- * creation-owned and cannot be refreshed or cold-resumed; the skill catalog is the
- * one refreshable section and records the catalog last delivered to the thread.
- */
-export type CodexEphemeralThreadPolicy = {
-  developerInstructions?: string;
-  skillsInstructions?: string;
-  /**
-   * Catalog carried by the thread's creation-time native developer instructions.
-   * Compaction rebuilds initial context from those instructions and drops the
-   * client-authored refresh, so this is the catalog a compacted thread reverts to.
-   */
-  nativeSkillsInstructions?: string;
-};
-
-export type CodexAppServerLiveThreadOwnership = {
-  assertCurrent: () => void;
-  configFingerprint?: string;
-  ephemeralPolicy?: CodexEphemeralThreadPolicy;
-  serviceTier?: CodexServiceTier | null;
-  /** Releases this active claim or the exact idle record it published. */
-  release: (threadId: string, assertCurrent?: () => void) => Promise<void>;
-  /** Forgets this local owner after native shutdown, without unsubscribing a successor. */
-  forget: () => void;
 };
 
 /** Match Codex's native grace window without retaining inactive conversations indefinitely. */
@@ -663,29 +639,15 @@ function claimCodexAppServerThreadOwnership(
   };
 }
 
-/**
- * Records that compaction rebuilt this thread from its creation-time developer
- * instructions and discarded the injected catalog refresh. Incognito compaction
- * keeps its separately owned subscription, so there is no claim/retain cycle to
- * carry the reversion and the retained record has to be corrected in place.
- */
+/** Standalone incognito compaction retains its separately owned subscription. */
 export function revertCodexAppServerLiveThreadSkillsCatalog(
   client: CodexAppServerClient,
   threadId: string,
 ): void {
   const runtime = configuredClients.get(client);
-  if (!runtime || runtime.closed) {
-    return;
+  if (runtime && !runtime.closed) {
+    revertRetainedThreadSkillsCatalog(runtime, threadId);
   }
-  const retained = runtime.retainedThreads.get(threadId);
-  const ephemeralPolicy = retained?.ephemeralPolicy;
-  if (!retained || !ephemeralPolicy) {
-    return;
-  }
-  retained.ephemeralPolicy = {
-    ...ephemeralPolicy,
-    skillsInstructions: ephemeralPolicy.nativeSkillsInstructions,
-  };
 }
 
 /** Distinguish active claimed ownership from an already-evicted idle subscription. */

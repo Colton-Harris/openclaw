@@ -21,8 +21,8 @@ import {
   consumeCodexAppServerLiveThread,
   retainCodexAppServerLiveThread,
   revertCodexAppServerLiveThreadSkillsCatalog,
-  type CodexAppServerLiveThreadOwnership,
 } from "./client-runtime.js";
+import type { CodexAppServerLiveThreadOwnership } from "./client-thread-owner.js";
 import {
   CodexAppServerRpcError,
   isCodexAppServerIndeterminateRequestCancellationError,

@@ -10,6 +10,7 @@ import {
 } from "./attempt-client-cleanup.js";
 import { resolveCodexAppServerLocalHomeDir } from "./auth-start-options.js";
 import { hasCodexAppServerSiblingThreadWork } from "./client-runtime.js";
+import { createCodexEphemeralThreadPolicy } from "./client-thread-owner.js";
 import {
   CodexAppServerRpcError,
   isCodexAppServerOverloadError,
@@ -707,16 +708,9 @@ export async function startFreshCodexThread(
     modelProvider:
       response.modelProvider ?? requestModelProvider ?? startModelProvider ?? modelProvider,
     // Restricted ephemeral threads also need creation policy for fenced warm reuse.
-    ...(startParams.ephemeral
-      ? {
-          liveThreadEphemeralPolicy: {
-            developerInstructions: params.developerInstructions,
-            skillsInstructions: params.skillsInstructions,
-            // Creation carries the catalog natively, so compaction restores exactly this one.
-            nativeSkillsInstructions: params.skillsInstructions,
-          },
-        }
-      : {}),
+    liveThreadEphemeralPolicy: startParams.ephemeral
+      ? createCodexEphemeralThreadPolicy(params)
+      : undefined,
     // Transient starts do not own the persisted binding, so their native
     // subscriptions must be released instead of entering the warm cache.
     ...(!preserveExistingBinding

@@ -235,7 +235,8 @@ export async function prepareCodexAttemptTurnRequest(
           : (buildCodexParentLocalInstructions(runtimeParams, {
               turnScopedDeveloperInstructions:
                 workspaceBootstrapContext.turnScopedDeveloperInstructions,
-                      memoryCollaborationInstructions:
+              skillsInstructions: context.skillsInstructions,
+              memoryCollaborationInstructions:
                 workspaceBootstrapContext.memoryCollaborationInstructions,
             }) ?? ""),
         signal: runAbortController.signal,

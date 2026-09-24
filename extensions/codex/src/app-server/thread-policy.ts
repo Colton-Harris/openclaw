@@ -1,5 +1,9 @@
-import { AgentHarnessPreflightError } from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { CodexEphemeralThreadPolicy } from "./client-runtime.js";
+import {
+  AgentHarnessPreflightError,
+  embeddedAgentLog,
+  formatErrorMessage,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
+import type { CodexEphemeralThreadPolicy } from "./client-thread-owner.js";
 import {
   isCodexAppServerOverloadError,
   isCodexAppServerPrewriteRequestCancellationError,
@@ -92,20 +96,26 @@ export async function refreshCodexThreadSkillsCatalog(
  * catalog after every compaction, including compaction inside an active turn.
  */
 export async function restoreCodexThreadSkillsCatalogAfterCompaction(
-  params: CodexThreadHandoffParams & {
-    ephemeralPolicy: CodexEphemeralThreadPolicy | undefined;
-  },
-): Promise<void> {
+  params: CodexThreadHandoffParams & { ephemeralPolicy: CodexEphemeralThreadPolicy | undefined },
+): Promise<CodexEphemeralThreadPolicy | undefined> {
   const policy = params.ephemeralPolicy;
-  // A thread still carrying its creation-time catalog natively needs no restore:
-  // compaction rebuilds that exact catalog from the developer instructions.
   if (!policy || policy.skillsInstructions === policy.nativeSkillsInstructions) {
-    return;
+    return policy;
   }
-  await refreshCodexThreadSkillsCatalog({
-    ...params,
-    skillsInstructions: policy.skillsInstructions,
-  });
+  try {
+    await refreshCodexThreadSkillsCatalog({
+      ...params,
+      skillsInstructions: policy.skillsInstructions,
+    });
+    return policy;
+  } catch (error) {
+    embeddedAgentLog.warn("failed to restore Codex skill catalog after compaction", {
+      threadId: params.threadId,
+      error: formatErrorMessage(error),
+    });
+    // Record what compaction restored so the next turn retries the lost handoff.
+    return { ...policy, skillsInstructions: policy.nativeSkillsInstructions };
+  }
 }
 
 async function injectCodexThreadDeveloperHandoff(

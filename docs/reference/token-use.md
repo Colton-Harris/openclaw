@@ -15,8 +15,9 @@ OpenClaw assembles its own system prompt on every run. It includes:
 
 - Tool list + short descriptions
 - Skills list (metadata only; instructions load on demand with `read`). Native
-  Codex threads carry the compact skills block in thread developer
-  instructions; other harnesses get it in the normal prompt surface.
+  Codex turns on the managed bundled app-server get the compact skills block
+  in parent-local model request instructions. Connections without that relay use
+  thread developer instructions; other harnesses get it in the normal prompt surface.
   Bounded by `skills.limits.maxSkillsPromptChars`, with optional per-agent
   override at `agents.entries.*.skillsLimits.maxSkillsPromptChars`.
 - Self-update instructions

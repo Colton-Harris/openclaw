@@ -272,11 +272,13 @@ export function buildCodexParentLocalInstructions(
   params: EmbeddedRunAttemptParams,
   options: {
     turnScopedDeveloperInstructions?: string;
+    skillsInstructions?: string;
     memoryCollaborationInstructions?: string;
   } = {},
 ): string | null {
   const contextInstructions = joinPresentSections(
     options.turnScopedDeveloperInstructions,
+    options.skillsInstructions,
     options.memoryCollaborationInstructions,
   );
   if (params.trigger === "cron") {

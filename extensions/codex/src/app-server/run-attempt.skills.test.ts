@@ -1,11 +1,15 @@
 // Codex tests cover installed-skill catalog delivery across live thread turns.
 import path from "node:path";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { describe, expect, it, vi } from "vitest";
+import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
+import { getCodexInferenceThread, ownCodexInferenceClient } from "./inference-routing.js";
+import { isJsonObject } from "./protocol.js";
+import { seedRunSessionOwnerForTest } from "./run-attempt-session-owners.test-support.js";
 import {
   createParams,
   createStartedThreadHarness,
   runCodexAppServerAttempt,
-  seedRunSessionOwnerForTest,
   setupRunAttemptTestHooks,
   tempDir,
 } from "./run-attempt-test-harness.js";
@@ -17,6 +21,86 @@ const SECOND_CATALOG =
   "<available_skills><skill><name>weather</name><description>edited</description></skill></available_skills>";
 
 describe("Codex app-server skill catalog delivery", () => {
+  it("keeps managed catalogs fresh and parent-local without thread refreshes", async () => {
+    const sessionKey = "agent:main:dashboard:incognito-managed-skills";
+    await seedRunSessionOwnerForTest("session-1", sessionKey);
+    let started = createDeferred<void>();
+    const received: string[] = [];
+    const harness = createStartedThreadHarness(async (method, request) => {
+      if (method === "account/read") {
+        return { account: { type: "apiKey" } };
+      }
+      if (method === "turn/start") {
+        const route = getCodexInferenceThread(harness.client, "thread-1");
+        expect(route).toBeDefined();
+        if (!route || !isJsonObject(request) || !isJsonObject(request.responsesapiClientMetadata)) {
+          throw new Error("Missing managed turn registration");
+        }
+        const generation = request.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY];
+        if (typeof generation !== "string") {
+          throw new Error("Missing managed generation");
+        }
+        const nativeBody = { instructions: "Native model-owned policy", input: [] };
+        const metadata = { requestKind: "turn", threadId: "thread-1", generation };
+        const parent = route.context.prepare(nativeBody, metadata);
+        parent.assertCurrent();
+        received.push(String(parent.body.instructions));
+        // A continuation uses the same current registration even if native history
+        // was rebuilt by compaction. Neither compaction nor children borrow it.
+        expect(route.context.prepare(nativeBody, metadata).body).toEqual(parent.body);
+        expect(
+          route.context.prepare(nativeBody, { ...metadata, requestKind: "compaction" }).body,
+        ).toBe(nativeBody);
+        expect(
+          route.context.prepare(nativeBody, {
+            ...metadata,
+            threadId: "child",
+            parentThreadId: "thread-1",
+          }).body,
+        ).toBe(nativeBody);
+        started.resolve();
+      }
+      return undefined;
+    });
+    ownCodexInferenceClient(harness.client);
+    for (const [index, catalog] of [
+      FIRST_CATALOG,
+      SECOND_CATALOG,
+      undefined,
+      SECOND_CATALOG,
+    ].entries()) {
+      started = createDeferred<void>();
+      const params = createParams(path.join(tempDir, "managed.jsonl"), tempDir, {
+        sessionKey,
+        runId: `managed-${index}`,
+      });
+      params.skillsSnapshot = { prompt: catalog ?? "", skills: [] };
+      if (index === 2) {
+        params.bootstrapContextMode = "lightweight";
+        params.bootstrapContextRunKind = "cron";
+      }
+      const run = runCodexAppServerAttempt(params);
+      await Promise.race([
+        started.promise,
+        run.then(() => {
+          throw new Error("Attempt completed before turn/start");
+        }),
+      ]);
+      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await run;
+    }
+    expect(received[0]).toContain(FIRST_CATALOG);
+    expect(received[1]).toContain(SECOND_CATALOG);
+    expect(received[1]).not.toContain(FIRST_CATALOG);
+    expect(received[2]).not.toContain("available_skills");
+    expect(received[3]).toContain(SECOND_CATALOG);
+    const nativeRequests = harness.requests.filter(({ method }) =>
+      ["thread/start", "thread/resume", "thread/inject_items"].includes(method),
+    );
+    expect(nativeRequests.map(({ method }) => method)).toEqual(["thread/start"]);
+    expect(JSON.stringify(nativeRequests)).not.toContain("available_skills");
+  });
+
   it("refreshes the incognito skill catalog without recreating the live thread", async () => {
     const sessionKey = "agent:main:dashboard:incognito-skill-refresh";
     await seedRunSessionOwnerForTest("session-1", sessionKey);

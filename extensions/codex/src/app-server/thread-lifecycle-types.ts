@@ -2,7 +2,7 @@ import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "ope
 import type {
   CodexAppServerLiveThreadOwnership,
   CodexEphemeralThreadPolicy,
-} from "./client-runtime.js";
+} from "./client-thread-owner.js";
 import type { CodexAppServerClient } from "./client.js";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
 import type { CodexInferenceProxy } from "./inference-proxy.js";
