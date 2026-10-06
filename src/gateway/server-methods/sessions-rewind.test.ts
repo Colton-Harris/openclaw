@@ -1066,6 +1066,7 @@ describe("session message-cut methods", () => {
       undefined,
       expect.objectContaining({
         code: ErrorCodes.UNAVAILABLE,
+        details: { reason: "session-run-active" },
         message: `${label} is unavailable while the agent is working.`,
       }),
     );
