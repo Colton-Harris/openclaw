@@ -1224,6 +1224,65 @@ struct ChatViewModelSessionActionTests {
         #expect(await transport.switchedBranches().count == 2)
     }
 
+    @Test func `branch rows stay unselectable while a Gateway confirmed run is active`() async {
+        // The compact composer nests the branch menu in a submenu that cannot
+        // render a disabled state, so each row must apply the same gate.
+        let branches = self.branches()
+        let activeBranch = branches[0]
+        let inactiveBranch = branches[1]
+        let transport = SessionActionTransport(
+            branchSwitchError: GatewayResponseError(
+                method: "sessions.branches.switch",
+                code: "UNAVAILABLE",
+                message: "Branch switch is temporarily blocked.",
+                details: ["reason": AnyCodable("session-run-active")]),
+            sessionListResponses: [
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 1,
+                    defaults: nil,
+                    sessions: [self.entry(key: "main", hasActiveRun: true)]),
+                OpenClawChatSessionsListResponse(
+                    ts: nil,
+                    path: nil,
+                    count: 1,
+                    defaults: nil,
+                    sessions: [self.entry(key: "main", hasActiveRun: false)]),
+            ],
+            branches: branches)
+        let viewModel = OpenClawChatViewModel(sessionKey: "main", transport: transport)
+        viewModel.sessionBranches = branches
+
+        #expect(viewModel.canSelectSessionBranch(inactiveBranch))
+        #expect(viewModel.canSelectSessionBranch(activeBranch) == false)
+
+        await viewModel.switchToBranch(inactiveBranch.leafEntryId)
+
+        #expect(viewModel.canSelectSessionBranch(inactiveBranch) == false)
+        #expect(viewModel.canSelectSessionBranch(activeBranch) == false)
+
+        await viewModel.fetchSessions(limit: 50)
+
+        #expect(viewModel.canSelectSessionBranch(inactiveBranch))
+        #expect(viewModel.canSelectSessionBranch(activeBranch) == false)
+    }
+
+    @Test func `branch rows stay unselectable during local run activity`() {
+        let branches = self.branches()
+        let viewModel = OpenClawChatViewModel(
+            sessionKey: "main",
+            transport: SessionActionTransport(branches: branches))
+        viewModel.sessionBranches = branches
+        viewModel.isSending = true
+
+        #expect(viewModel.canSelectSessionBranch(branches[1]) == false)
+
+        viewModel.isSending = false
+
+        #expect(viewModel.canSelectSessionBranch(branches[1]))
+    }
+
     @Test func `branch switch reconciles a legacy active run rejection`() async {
         let branches = self.branches()
         let activeSession = self.entry(key: "main", hasActiveRun: true)

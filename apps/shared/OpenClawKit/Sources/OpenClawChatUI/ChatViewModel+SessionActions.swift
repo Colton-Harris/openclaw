@@ -774,6 +774,14 @@ extension OpenClawChatViewModel {
             !self.hasUnresolvedOutboxCommandsForCurrentSession
     }
 
+    /// Whether one branch row can start a switch. On iPhone the branch menu is
+    /// nested in Composer options, where it renders as a UIKit submenu that has
+    /// no disabled state, so the menu-level gate never reaches the user. Each
+    /// row therefore carries the same gate itself.
+    func canSelectSessionBranch(_ branch: OpenClawChatSessionBranch) -> Bool {
+        !branch.active && self.canSwitchSessionBranch
+    }
+
     /// The listed row can be stale — a refresh that never applied leaves the
     /// pre-run entry in place — so the Gateway's own rejection is kept as an
     /// independent liveness fact until the server contradicts it.
