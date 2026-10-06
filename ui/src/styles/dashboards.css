@@ -50,7 +50,7 @@
 
 .dashboards-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) max-content max-content;
+  grid-template-columns: minmax(240px, 1fr) max-content max-content max-content;
   gap: var(--space-3);
   align-items: end;
   margin-bottom: var(--space-3);
@@ -139,6 +139,7 @@
 }
 
 .dashboard-card {
+  position: relative;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -253,6 +254,41 @@
   border-radius: 50%;
   background: var(--ok);
   box-shadow: 0 0 0 3px var(--ok-subtle);
+}
+
+.dashboard-card__archived {
+  flex: none;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.dashboard-card--archived .dashboard-preview {
+  opacity: 0.6;
+}
+
+/* Sits in the footer row, left of the open arrow; the card link cannot nest a button. */
+.dashboard-card__menu {
+  position: absolute;
+  right: calc(var(--space-4) + 14px + var(--space-1));
+  bottom: 6px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 6px;
+}
+
+.dashboard-card__menu svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-card__menu[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .dashboard-card__author {
