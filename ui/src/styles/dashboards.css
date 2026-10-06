@@ -49,17 +49,20 @@
 }
 
 .dashboards-toolbar {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) max-content max-content max-content;
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
-  align-items: end;
+  align-items: flex-end;
   margin-bottom: var(--space-3);
 }
 
 .dashboards-search {
   position: relative;
   display: flex;
+  flex: 1 1 240px;
   align-items: center;
+  min-width: min(240px, 100%);
 }
 
 .dashboards-search > span[aria-hidden="true"] {
@@ -359,12 +362,15 @@
   }
 }
 
-@media (max-width: 768px) {
-  .dashboards-toolbar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
+/* One row needs the 240px search, three selects of at least 156px, and gaps. Below that,
+   give search its own row and keep the selects together; flex-wrap covers longer labels. */
+@container (max-width: 800px) {
   .dashboards-search {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
+  }
+  .dashboards-select {
+    flex: 1 1 0;
+    min-width: 0;
   }
   .dashboards-select select,
   .dashboards-loading__select {
@@ -373,15 +379,17 @@
   }
 }
 
+@container (max-width: 480px) {
+  .dashboards-select {
+    flex-basis: 100%;
+  }
+}
+
 @media (max-width: 560px) {
   .dashboards-header__count {
     display: none;
   }
-  .dashboards-grid,
-  .dashboards-toolbar {
+  .dashboards-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .dashboards-search {
-    grid-column: auto;
   }
 }
