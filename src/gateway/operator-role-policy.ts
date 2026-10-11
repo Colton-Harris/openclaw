@@ -4,7 +4,10 @@ import {
   type ErrorShape,
 } from "../../packages/gateway-protocol/src/index.js";
 import { GATEWAY_OWNER_PROFILE_ID } from "../../packages/gateway-protocol/src/schema/users.js";
-import { assertAdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
+import {
+  assertAdmittedRunOperatorAuthority,
+  type AdmittedRunOperatorAuthority,
+} from "../agents/admitted-run-context.js";
 import type { SessionCreatedActor } from "../config/sessions/session-entry-provenance.js";
 import type { GatewayOperatorRoleDefinition } from "../config/types.gateway.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -15,6 +18,7 @@ import { profileCatalogPath } from "../state/user-profile-identity.read.js";
 import { readResidentUserProfileRevision } from "../state/user-profile-list.js";
 import { getUserProfileRole } from "../state/user-profiles.js";
 import { bumpGatewayAccessRevision } from "./gateway-access-revision.js";
+import { authorizePrivateMiniMeAgent } from "./private-agent-access.js";
 import type { GatewayClient, GatewayOperatorRoleActor } from "./server-methods/shared-types.js";
 
 const operatorRoleLog = createSubsystemLogger("gateway/operator-roles");
@@ -34,6 +38,7 @@ const deniedOperatorRole: GatewayOperatorRoleDefinition = {
 
 type GatewaySessionAgentAuthorization = {
   cfg: OpenClawConfig;
+  operatorAuthority?: AdmittedRunOperatorAuthority;
   agentId: string;
 } & (
   | { actor: GatewayOperatorRoleActor; profileId?: never; client?: never }
@@ -301,6 +306,16 @@ export function authorizeGatewaySessionCreation(
   const actor =
     params.actor ??
     ("client" in params ? resolveGatewayOperatorRoleActor(params.client) : undefined);
+  const privateError = authorizePrivateMiniMeAgent({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    client: "client" in params ? params.client : undefined,
+    operatorAuthority: params.operatorAuthority,
+    authorityProfileId: actor?.kind === "operator" ? actor.profileId : params.profileId,
+  });
+  if (privateError) {
+    return privateError;
+  }
   if (actor?.kind === "system") {
     return undefined;
   }

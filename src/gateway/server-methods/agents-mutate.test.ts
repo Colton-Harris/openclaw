@@ -3,7 +3,7 @@
 
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeAll, describe, expect, it, vi, beforeEach } from "vitest";
 import { AgentDeletionAuthorityRollbackError } from "../../agents/agent-lifecycle-registry.js";
 import { WORKSPACE_BOOTSTRAP_FILENAMES } from "../../agents/workspace.js";
 import { FsSafeError, root } from "../../infra/fs-safe.js";
@@ -14,12 +14,14 @@ import {
   createEnoentError,
   createErrnoError,
   deletionJournal,
+  expectDeletionCommitGuards,
   expectRecordFields,
   expectRespondErrorContaining,
   expectRespondOk,
   firstRespondResult,
   makeFileStat,
   mockCallArg,
+  prepareAgentMutationPrivateOwnership,
   registerAgentCreationCommitTests,
 } from "./agents-mutate.test-support.js";
 type AgentPolicyRemoval = { agentId: string; operationId: string };
@@ -412,6 +414,10 @@ vi.mock("node:fs/promises", async () => {
 });
 
 const { agentsHandlers } = await import("./agents.js");
+
+// Gateway startup hydrates private ownership before dispatch. These direct handler calls bypass
+// that lifecycle, so the isolated state hydrates once through the real state worker.
+beforeAll(() => prepareAgentMutationPrivateOwnership(mocks));
 
 beforeEach(() => {
   vi.mocked(root).mockReset();
@@ -887,15 +893,7 @@ describe("agents.delete", () => {
         { path: "/transcripts/test-agent", method: "trash" },
       ]),
     );
-    expect(mocks.writeConfigFile).toHaveBeenCalledWith(expect.anything(), {
-      allowConfigSizeDrop: true,
-      assertConfigPathForWrite: mocks.assertAgentDeletionCurrent,
-      allowedAgentRosterRemovals: ["test-agent"],
-    });
-    expect(mocks.deleteWorkspaceState).toHaveBeenCalledWith(
-      { workspaceDir: "/workspace/test-agent" },
-      { assertCurrent: mocks.assertAgentDeletionCurrent },
-    );
+    expectDeletionCommitGuards(mocks);
     expect(cronJobs).toEqual([{ id: "other-job", agentId: "other-agent" }]);
     expect(approvals).toEqual(new Set(["other-agent"]));
     expect(mocks.cronRemoveAgentJobsTransactional).toHaveBeenCalledWith(

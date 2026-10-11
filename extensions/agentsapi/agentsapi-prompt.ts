@@ -82,6 +82,7 @@ export async function buildAgentsApiInstructions(
     workspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
+    hostCapabilities: params.hostCapabilities,
     sessionId: params.sessionId,
     bootstrapUserProfileId: params.bootstrapUserProfileId,
     agentId: params.agentId,

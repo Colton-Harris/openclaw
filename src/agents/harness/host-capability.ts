@@ -8,6 +8,7 @@ import {
 } from "../../infra/installation-target-context.js";
 import { registerMcpToolApprovalBinding } from "../../infra/mcp-tool-approval-binding.js";
 import { prepareSystemRunMutableFileApproval } from "../../infra/system-run-approval-binding.js";
+import type { MiniMeToolConsultation } from "../../mini-me/consultation.js";
 import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
 import {
   getGatewayContextResolver,
@@ -58,6 +59,7 @@ import type { AgentHarnessHostCapabilities } from "./host-capability-types.js";
 import { captureRequiredWorkspaceToolFloor } from "./host-capability-workspace.js";
 import { normalizeNativeOperationCwd, prepareAgentHarnessEnvironment } from "./host-environment.js";
 import { bindHarnessMedia } from "./host-media.js";
+import { captureHostMiniMeRun } from "./host-mini-me.js";
 import {
   registerAgentHarnessBeforeToolCallRetention,
   registerAgentHarnessScheduledToolProjectionCapability,
@@ -99,6 +101,7 @@ export function createAgentHarnessHostCapabilities(params: {
   runWithScope: <T>(run: () => Promise<T>) => Promise<T>;
 } {
   const attempt = params.attempt;
+  const miniMeRun = captureHostMiniMeRun(attempt);
   // Capture authority by value before any plugin handoff can mutate the attempt.
   const runtimePluginToolGrant = attempt.runtimePluginToolGrant
     ? Object.freeze({
@@ -192,6 +195,13 @@ export function createAgentHarnessHostCapabilities(params: {
   const hostSandboxEnabled = attempt.sandbox?.enabled === true;
   const requiredWorkspace = captureRequiredWorkspaceToolFloor(attempt, params.pluginId, config);
   const capturedWorkspaceOptions = requiredWorkspace?.apply();
+  const miniMe = miniMeRun.bind({
+    capturedWorkspaceDir: capturedWorkspaceOptions?.workspaceDir,
+    config,
+    requesterProfileId,
+    assertActive,
+    bindSignal: () => bindAbortSignal(attemptSignal),
+  });
   const media = bindHarnessMedia({
     attempt,
     config,
@@ -408,6 +418,7 @@ export function createAgentHarnessHostCapabilities(params: {
     options: HostToolSurfaceOptions,
     libraryEntries?: readonly SkillEntry[],
     assertCurrent: () => void = assertActive,
+    miniMeConsultation?: MiniMeToolConsultation,
   ) => {
     assertCurrent();
     const effectiveOptions = { ...options, ...requiredWorkspace?.apply(options) };
@@ -417,6 +428,8 @@ export function createAgentHarnessHostCapabilities(params: {
         // Availability belongs to this prepared host, not mutable plugin inputs.
         githubPublicationAvailable,
         runtimePluginToolGrant,
+        // Plugins cannot supply a consultation carrying another owner's authority.
+        miniMeConsultation,
         skillsSnapshot: options?.skillsSnapshot ?? skillsSnapshot,
         installedSkills: getInstalledSkills(
           effectiveOptions.sandbox,
@@ -495,7 +508,10 @@ export function createAgentHarnessHostCapabilities(params: {
     },
     bindToolSurface,
     createToolSurface: (options, bindingOptions) => {
-      const inputs = toolConstructionInputs(options);
+      // The deprecated synchronous factory retains a lazy async consultation.
+      // No content/provider binding is loaded until that tool is actually called.
+      const miniMeBinding = miniMe.prepare();
+      const inputs = toolConstructionInputs(options, undefined, undefined, miniMeBinding?.consult);
       return bindCreatedTools(
         withToolConstructionScope(() =>
           createOpenClawCodingToolsInternal(inputs.options, inputs.skillReadResources),
@@ -508,10 +524,13 @@ export function createAgentHarnessHostCapabilities(params: {
       const library = librarySelections.length
         ? await prepareHostSkillLibraryResources(librarySelections, assertActive)
         : undefined;
+      const miniMeBinding = miniMe.prepare(library?.assertCurrent);
+      const miniMeConsultation = miniMeBinding ? await miniMeBinding.read() : undefined;
       const inputs = toolConstructionInputs(
         options,
         library?.entries ?? [],
         library?.assertCurrent,
+        miniMeConsultation,
       );
       const sourceTools = await withToolConstructionScope(() =>
         createOpenClawCodingToolsInternalAsync(
@@ -623,6 +642,7 @@ export function createAgentHarnessHostCapabilities(params: {
       };
     },
   });
+  miniMe.register(capabilities);
   registerAgentHarnessScheduledToolProjectionCapability({
     hostCapabilities: capabilities,
     ownerPluginId: params.pluginId,

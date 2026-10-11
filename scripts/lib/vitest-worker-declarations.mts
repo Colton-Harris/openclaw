@@ -15,6 +15,8 @@ export const runtimeProcessDeclarationEntries = {
     "extensions/memory-core/src/memory/manager-search-knn-entrypoint.ts",
 };
 export const vitestWorkerDeclarationEntries = {
+  "test-support/mini-me-persistence-process.test-support":
+    "test/helpers/mini-me-persistence-process.test-support.ts",
   "worker/native-worker-entrypoints.test-support":
     "src/worker/native-worker-entrypoints.test-support.ts",
   "extensions/acpx/src/runtime.admission-retention-entrypoint.test-support":

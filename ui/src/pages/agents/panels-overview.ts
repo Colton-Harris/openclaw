@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import "../mini-me/attachment-summary.ts";
 import { normalizeAgentModelRefForConfig } from "../../../../src/config/model-input.js";
 import type {
   AgentIdentityResult,
@@ -174,7 +175,9 @@ export function renderAgentOverview(
   const fallbackOptions = buildModelOptions(configForm, null, params.modelCatalog, agent.id);
   const isPrimaryModel = createPrimaryModelExclusion(configForm, effectivePrimary, agent.id);
 
-  return html`
+  return html`<openclaw-mini-me-attachment-summary
+      .agentId=${agent.id}
+    ></openclaw-mini-me-attachment-summary>
     ${renderSettingsSection(
       { title: t("agents.identity.title"), description: t("agents.identity.subtitle") },
       html`
@@ -385,8 +388,7 @@ export function renderAgentOverview(
           `,
         })}
       `,
-    )}
-  `;
+    )} `;
 }
 
 export function renderAgentContextSection(

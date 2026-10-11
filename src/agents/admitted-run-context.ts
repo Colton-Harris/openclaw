@@ -25,6 +25,7 @@ import {
   validateAgentRunDelegatedAuthority,
   type AgentRunDelegatedAuthority,
 } from "../infra/agent-run-registry.js";
+import { capturePrivateMiniMeRunAssertion } from "../mini-me/private-agent-projection.js";
 import type { GatewayAccessGrantRef } from "../plugins/gateway-access-policy.types.js";
 import { prepareGatewayContextBindingOwner } from "../plugins/runtime/gateway-context-binding-owner.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
@@ -546,23 +547,37 @@ export function prepareAgentRunAdmission(params: {
     assertAdmittedRunOperatorAuthority(operatorAuthority);
   }
   const assertOperatorCurrent = operatorAuthority?.assertCurrent;
+  const miniMeMarker = params.cfg.agents?.entries?.[params.facts.agentId]?.miniMe;
+  if (miniMeMarker && !params.cfg.agents?.entries?.[params.facts.agentId]?.model) {
+    throw new Error("Choose a conversation model in Mini Me settings before chatting with it");
+  }
+  const assertMiniMeCurrent = miniMeMarker
+    ? capturePrivateMiniMeRunAssertion({
+        agentId: params.facts.agentId,
+        marker: miniMeMarker,
+        ownerId: operatorAuthority?.profileId,
+      })
+    : undefined;
   const releaseOperatorAuthority = operatorAuthority?.retain?.();
   let sourceFailure: Error | undefined;
   const assertSourceCurrent =
-    (sourceAssertion || assertOperatorCurrent) &&
-    composeSessionSourceAssertion([sourceAssertion, assertOperatorCurrent], (assertSources) => {
-      if (sourceFailure) {
-        throw sourceFailure;
-      }
-      try {
-        assertSources();
-      } catch (error) {
-        sourceFailure = new Error("source execution authority is no longer active", {
-          cause: error,
-        });
-        throw error;
-      }
-    });
+    (sourceAssertion || assertOperatorCurrent || assertMiniMeCurrent) &&
+    composeSessionSourceAssertion(
+      [sourceAssertion, assertOperatorCurrent, assertMiniMeCurrent],
+      (assertSources) => {
+        if (sourceFailure) {
+          throw sourceFailure;
+        }
+        try {
+          assertSources();
+        } catch (error) {
+          sourceFailure = new Error("source execution authority is no longer active", {
+            cause: error,
+          });
+          throw error;
+        }
+      },
+    );
   let admittedRuntimeKind: ExecutionIdentityAdmissionFacts["runtime"]["kind"] | undefined;
   let admittedRuntimeInstanceId: string | undefined;
   let admitted: Promise<AdmittedRunContext> | undefined;

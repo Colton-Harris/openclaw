@@ -3,6 +3,7 @@ import {
   loadSessionEntryReadOnly,
   loadTranscriptEvents,
 } from "../config/sessions/session-accessor.js";
+import { prepareMiniMePrivateAgentProjection } from "../mini-me/private-agent-projection.js";
 import { withSessionTranscriptWriteLock } from "../plugin-sdk/session-transcript-runtime.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createGatewaySession } from "./session-create-service.js";
@@ -31,6 +32,7 @@ async function appendImportedMessage(params: {
 describe("atomic Gateway session initialization", () => {
   it("publishes a usable session only after its transcript initializer succeeds", async () => {
     await withOpenClawTestState({ label: "atomic-session-success" }, async () => {
+      await prepareMiniMePrivateAgentProjection();
       let transcriptScope:
         | { agentId: string; sessionId: string; sessionKey: string; storePath: string }
         | undefined;
@@ -72,6 +74,7 @@ describe("atomic Gateway session initialization", () => {
 
   it("removes the new session and transcript when initialization fails", async () => {
     await withOpenClawTestState({ label: "atomic-session-failure" }, async () => {
+      await prepareMiniMePrivateAgentProjection();
       const sessionKey = "agent:main:atomic-failure";
       const created = await createGatewaySession({
         cfg: {},
@@ -100,6 +103,7 @@ describe("atomic Gateway session initialization", () => {
 
   it("preserves the existing post-commit contract for ordinary session creation", async () => {
     await withOpenClawTestState({ label: "ordinary-session-initializer" }, async () => {
+      await prepareMiniMePrivateAgentProjection();
       const sessionKey = "agent:main:ordinary-initializer";
       const created = await createGatewaySession({
         cfg: {},
@@ -107,6 +111,7 @@ describe("atomic Gateway session initialization", () => {
         commandSource: "test",
         operatorRoleActor: { kind: "system" },
         afterCreate: async () => {
+          await prepareMiniMePrivateAgentProjection();
           throw new Error("initial turn failed");
         },
       });

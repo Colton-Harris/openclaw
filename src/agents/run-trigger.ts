@@ -15,4 +15,5 @@ export type IsolatedCompletionPurpose =
   | "conversation-label"
   | "progress-narration"
   | "transcript-summary"
+  | "mini-me-learning"
   | "plugin-completion";

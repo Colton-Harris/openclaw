@@ -142,7 +142,7 @@ export async function prepareAgentWorkspaceContext(
     personaFiles,
     personaInstructions: renderPersonaInstructions(personaFiles),
     sharedPersonaInstructions: renderPersonaInstructions(
-      personaFiles.filter((file) => file.personalUser !== true),
+      personaFiles.filter((file) => file.personalUser !== true && file.miniMe !== true),
     ),
     promptContextFiles,
     memoryReferenceFiles,
@@ -186,6 +186,7 @@ function toContextFile(file: BootstrapFile): EmbeddedContextFile {
     path: file.path,
     content: file.content ?? "",
     ...(file.personalUser === true ? { personalUser: true } : {}),
+    ...(file.miniMe === true ? { miniMe: true } : {}),
   };
 }
 

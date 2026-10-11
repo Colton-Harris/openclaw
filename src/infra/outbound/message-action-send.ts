@@ -23,6 +23,7 @@ import {
 } from "../../interactive/payload.js";
 import type { AssistantDeliveryTtsFacts } from "../../llm/types.js";
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
+import { captureMiniMeEffectPreparation } from "../../mini-me/effect-scope.js";
 import { readBooleanParam } from "../../plugin-sdk/boolean-param.js";
 import { withChannelReadAuthority } from "../../shared/channel-read-authority.js";
 import { dedupeByKey } from "../../shared/dedupe-by-key.js";
@@ -338,6 +339,13 @@ export async function buildMessagePayload(params: {
 const UNRESOLVED_PREFIX_VAR_PATTERN = /\{[a-zA-Z][a-zA-Z0-9.]*\}/;
 
 export async function executeMessageSend(ctx: ResolvedActionContext): Promise<MessageActionResult> {
+  if (captureMiniMeEffectPreparation("message.send")) {
+    // Route/payload preparation and plugin hooks may still transform this send.
+    // An adapter must bind its final transport shape before this grant can apply.
+    throw new Error(
+      "Mini Me delegation is unavailable until this channel has a qualified exact-text dispatch adapter.",
+    );
+  }
   const {
     cfg,
     params,

@@ -694,3 +694,10 @@ export function acquireSessionRowEntry(params: {
   }
   return next;
 }
+
+/** Private rows carry their source lifetime; resident rows carry the current generation. */
+export function isCurrentProjectionRow(row: Row, rows: ReadonlyMap<string, Row>): boolean {
+  return row.privateSource
+    ? isPrivateSourceCurrent(row.privateSource)
+    : isCurrentGeneration(row, rows.get(identity(row)));
+}

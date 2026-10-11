@@ -9,7 +9,6 @@ import type { InboundEventKind } from "../../channels/inbound-event/kind.js";
 import type { ConversationReadInvocationOrigin } from "../../channels/plugins/conversation-read-origin.js";
 import type { PreparedMessageToolCatalog } from "../../channels/plugins/message-action-discovery.js";
 import { isScheduledMessageWriteAction } from "../../channels/plugins/message-action-dispatch.js";
-import type { ChannelMessageActionName } from "../../channels/plugins/types.public.js";
 import { resolveCommandSecretRefsViaGateway } from "../../cli/command-secret-gateway.js";
 import { getScopedChannelsCommandSecretTargets } from "../../cli/command-secret-targets.js";
 import { resolveMessageSecretScope } from "../../cli/message-secret-scope.js";
@@ -56,6 +55,7 @@ import {
   buildMessageToolDeliveryFingerprint,
   normalizeMessageToolIdempotencyKeyPart,
 } from "./message-tool-idempotency.js";
+import { readMiniMeScopedMessageAction } from "./message-tool-mini-me.js";
 import {
   projectScheduledMessageActionPartialResult,
   shouldRevalidateCompletedMessageAction,
@@ -250,9 +250,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const assertCaller = turnAuthority.captureCaller(signal, captureGatewayToolCallerAssertion);
       // Shallow-copy so we don't mutate the original event args (used for logging/dedup).
       const params = { ...(args as Record<string, unknown>) };
-      const action = readToolStringParam(params, "action", {
-        required: true,
-      }) as ChannelMessageActionName;
+      const { action, assertCurrentCaller } = readMiniMeScopedMessageAction(params, assertCaller);
       const {
         authorization: trustedTurnContext,
         config: rawConfig,
@@ -291,7 +289,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         throw new Error("message action turn capability is no longer active");
       }
       const assertActionCurrent = () => {
-        assertCaller();
+        assertCurrentCaller();
         turnAuthority.assertCurrent();
         const scheduled = messageActionAuthorization.scheduled;
         ((scheduledRead ?? scheduledWrite)

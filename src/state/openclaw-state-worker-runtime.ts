@@ -21,6 +21,7 @@ import { getSqliteWorkerStateContext } from "../infra/sqlite-worker-state-contex
 import { persistInterruptedUpdateObservation } from "../infra/update-run-interruption-store.js";
 import { recordUpdateRunMutationInWorker } from "../infra/update-run-mutation.worker.js";
 import { reconcileUpdateRunCandidatesInWorker } from "../infra/update-run-reconciliation.worker.js";
+import { executeMiniMeStateCommand } from "../mini-me/persistence.state-worker.js";
 import { writeSecretStoreEntryForConfigRefInDatabase } from "../secrets/store/secret-store-config-ref.kernel.js";
 import { purgeExpiredSecretStoreEntriesInDatabase } from "../secrets/store/secret-store-expiry.kernel.js";
 import {
@@ -114,6 +115,15 @@ export function executeSharedStateCommand(
     return sameSqliteFileGeneration(
       command.input.generation,
       readStableSqliteFileGeneration(context.databasePath),
+    );
+  }
+  if (command.type.startsWith("miniMe.")) {
+    return executeMiniMeStateCommand(
+      // SAFETY: Every miniMe.* discriminant in the closed state command union belongs to this operation map.
+      command as import("../infra/sqlite-worker-contract.js").SqliteWorkerCommand<
+        import("../mini-me/persistence.types.js").MiniMeStateWorkerOperations
+      >,
+      { database: open(), ...stateOptions() },
     );
   }
   if (command.type === "userPreferences.read" || command.type === "userPreferences.write") {

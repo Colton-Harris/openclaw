@@ -12,7 +12,11 @@ export function createApplicationNavigationPreferences(
   const snapshot = (): ApplicationNavigationPreferencesSnapshot => ({
     navCollapsed,
     navWidth: preferences.settings.navWidth,
-    sidebarEntries: preferences.settings.sidebarEntries,
+    sidebarEntries:
+      preferences.settings.sidebarMiniMeManaged ||
+      preferences.settings.sidebarEntries.includes("route:mini-me")
+        ? preferences.settings.sidebarEntries
+        : ["route:mini-me", ...preferences.settings.sidebarEntries],
     pinnedAgentIds: preferences.settings.pinnedAgentIds ?? [],
   });
   const listeners = new Set<(next: ApplicationNavigationPreferencesSnapshot) => void>();
@@ -35,6 +39,7 @@ export function createApplicationNavigationPreferences(
       }
       if (patch.sidebarEntries !== undefined) {
         persisted.sidebarEntries = [...patch.sidebarEntries];
+        persisted.sidebarMiniMeManaged = true;
       }
       if (patch.pinnedAgentIds !== undefined) {
         persisted.pinnedAgentIds = [...patch.pinnedAgentIds];

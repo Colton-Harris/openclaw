@@ -3,13 +3,18 @@ import {
   GATEWAY_CLIENT_IDS,
   hasGatewayClientCap,
 } from "../../../packages/gateway-protocol/src/client-info.js";
-import { validateAgentsListParams } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  ErrorCodes,
+  errorShape,
+  validateAgentsListParams,
+} from "../../../packages/gateway-protocol/src/index.js";
 import { listAgentIds } from "../../agents/agent-scope.js";
 import { prepareOperatorModelPresentation } from "../operator-model-presentation.js";
 import {
   authorizeCurrentOperatorRoleScopes,
   resolveOperatorRolePolicy,
 } from "../operator-role-policy.js";
+import { authorizePrivateMiniMeAgent } from "../private-agent-access.js";
 import { listAgentsForGateway } from "../session-utils.js";
 import {
   readPreparedServerMethodModelCatalog,
@@ -29,7 +34,9 @@ export const agentListHandler: GatewayRequestHandler = async ({
   }
 
   const cfg = context.getRuntimeConfig();
-  const agentIds = listAgentIds(cfg);
+  const agentIds = listAgentIds(cfg).filter(
+    (agentId) => authorizePrivateMiniMeAgent({ cfg, client, agentId }) === null,
+  );
   const modelCatalogByAgentId = context.readPreparedGatewayModelCatalogBatch
     ? await readPreparedServerMethodModelCatalogs(context, agentIds)
     : new Map(
@@ -41,6 +48,7 @@ export const agentListHandler: GatewayRequestHandler = async ({
         ),
       );
   const result = await listAgentsForGateway(cfg, {
+    visibleAgentIds: new Set(agentIds),
     modelCatalogByAgentId,
     includeSystem: hasGatewayClientCap(client?.connect.caps, GATEWAY_CLIENT_CAPS.AGENT_KIND),
     httpAvatarBasePath:
@@ -55,10 +63,24 @@ export const agentListHandler: GatewayRequestHandler = async ({
     return;
   }
   const allowedAgents = resolveOperatorRolePolicy(client, currentConfig)?.agents;
+  const privateVisible = result.agents.filter(
+    (agent) =>
+      authorizePrivateMiniMeAgent({ cfg: currentConfig, client, agentId: agent.id }) === null,
+  );
   const agents =
     allowedAgents && allowedAgents !== "*"
-      ? result.agents.filter((agent) => allowedAgents.includes(agent.id))
-      : result.agents;
+      ? privateVisible.filter((agent) => allowedAgents.includes(agent.id))
+      : privateVisible;
+  const privateDefaultHidden =
+    authorizePrivateMiniMeAgent({ cfg: currentConfig, client, agentId: result.defaultId }) !== null;
+  if (privateDefaultHidden && !agents.length) {
+    respond(
+      false,
+      undefined,
+      errorShape(ErrorCodes.FORBIDDEN, "No accessible agent is available."),
+    );
+    return;
+  }
   const policy = prepareOperatorModelPresentation({
     cfg: currentConfig,
     policyConfig: context.getCommittedRuntimeConfig?.() ?? currentConfig,
@@ -68,6 +90,7 @@ export const agentListHandler: GatewayRequestHandler = async ({
     true,
     {
       ...result,
+      ...(privateDefaultHidden ? { defaultId: agents[0]!.id } : {}),
       agents: policy
         ? agents.map((agent) =>
             policy.forAgent(agent.id, modelCatalogByAgentId.get(agent.id)?.entries).agent(agent),

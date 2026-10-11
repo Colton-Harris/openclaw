@@ -1,4 +1,5 @@
 import type { ErrorShape } from "../../packages/gateway-protocol/src/index.js";
+import { authorizePrivateMiniMeAgent } from "./private-agent-access.js";
 import { gatewayClientSessionCreator } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
 import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
@@ -23,6 +24,15 @@ export function authorizeSessionDescribe(params: {
     const agent = resolveRequestedSessionAgentId(cfg, target.sessionKey, target.agentId);
     if (!agent.ok) {
       return agent.error;
+    }
+    if (
+      authorizePrivateMiniMeAgent({
+        cfg: policyConfig,
+        client: params.client,
+        agentId: agent.agentId,
+      })
+    ) {
+      return hiddenSessionNotFound(target.sessionKey);
     }
     const row = projection.describe({ key: target.sessionKey, agentId: agent.agentId });
     const sharing = prepareProjectedSessionSharing({

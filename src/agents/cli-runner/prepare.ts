@@ -74,10 +74,6 @@ import {
   buildBootstrapPromptWarningNotice,
   buildBootstrapTruncationReportMeta,
 } from "../bootstrap-budget.js";
-import {
-  makeBootstrapWarn as makeBootstrapWarnImpl,
-  resolveBootstrapContextForRun as resolveBootstrapContextForRunImpl,
-} from "../bootstrap-files.js";
 import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
 import { isPrimaryBootstrapRun, resolveWorkspaceBootstrapRouting } from "../bootstrap-routing.js";
 import {
@@ -141,6 +137,7 @@ import { prepareCliHistoryBoundary } from "./history-boundary.js";
 import { cliBackendLog } from "./log.js";
 import { buildCliMcpGrantContext } from "./mcp-grant-context.js";
 import { resolveCliCatalogCapabilities } from "./model-capabilities.js";
+import { prepareCliBootstrapContext } from "./prepare-bootstrap.js";
 import { detectNodeClaudePlacement, resolveClaudeCliContextModelId } from "./prepare-claude.js";
 import * as mcp from "./prepare-mcp.js";
 import { runWithCliPreparationSource } from "./prepare-source.js";
@@ -670,25 +667,12 @@ async function prepareCliRunContextWithinReadFence(
     ? resolveAutoCliSessionReseedHistoryChars(contextWindowInfo.tokens)
     : undefined;
 
-  const sessionLabel = params.sessionKey ?? params.sessionId;
-  const { bootstrapFiles, contextFiles: resolvedContextFiles } = skipsTurnPreparation
-    ? { bootstrapFiles: [], contextFiles: [] }
-    : await resolveBootstrapContextForRunImpl({
-        workspaceDir: params.bootstrapWorkspaceDir ?? workspaceDir,
-        config: params.config,
-        sessionKey: params.sessionKey,
-        sessionId: params.sessionId,
-        bootstrapUserProfileId: params.bootstrapUserProfileId,
-        chatType: runtimeChatType,
-        agentId: sessionAgentId,
-        contextMode: params.bootstrapContextMode,
-        runKind: params.bootstrapContextRunKind,
-        warn: makeBootstrapWarnImpl({
-          sessionLabel,
-          workspaceDir,
-          warn: (message) => cliBackendLog.warn(message),
-        }),
-      });
+  const { bootstrapFiles, contextFiles: resolvedContextFiles } = await prepareCliBootstrapContext({
+    params,
+    workspaceDir,
+    agentId: sessionAgentId,
+    skipsTurnPreparation,
+  });
   // Mirror the embedded runner's bootstrap routing for backends that transport
   // OpenClaw's system prompt. Only a declared native-tool backend can complete
   // the file-based ritual; other backends receive limited guidance.

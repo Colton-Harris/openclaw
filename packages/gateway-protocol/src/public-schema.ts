@@ -670,3 +670,5 @@ export {
 export * from "./schema/sessions-involvement.js";
 
 export * from "./schema/catalog.js";
+
+export * from "./schema/mini-me.js";

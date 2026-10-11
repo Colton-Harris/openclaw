@@ -2,6 +2,7 @@ import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { assertAdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { hasPrivateMiniMeAgents } from "../mini-me/private-agent-projection.js";
 import { isIncognitoSessionKey, toAgentStoreSessionKey } from "../routing/session-key.js";
 import { operatorScopeSatisfied } from "../shared/operator-scope-compat.js";
 import type { OpenClawStateDatabaseOptions } from "../state/openclaw-state-db.js";
@@ -15,6 +16,7 @@ import {
   resolveOperatorRolePolicy,
   resolveOperatorRolePolicyForAssignment,
 } from "./operator-role-policy.js";
+import { authorizePrivateMiniMeAgent } from "./private-agent-access.js";
 import { authenticatedProfileUnavailableError } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient, SessionMutationAuthorization } from "./server-methods/types.js";
 import { isSessionCreatorProfile, prepareSessionCreatorProfile } from "./session-creator.js";
@@ -22,6 +24,7 @@ import {
   SessionMutationAuthorizationChangedError,
   SessionSharingProfileFactsChangedError,
 } from "./session-mutation-authorization-error.js";
+import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
 import {
   hasNativeIncognitoSessionSharingSource,
   type IncognitoSessionSharingTarget,
@@ -44,6 +47,22 @@ import {
 } from "./session-sharing-snapshot-cache.js";
 import type { GatewaySessionStoreSelection } from "./session-utils-store-retained.js";
 
+function canReadPrivateAgent(
+  cfg: OpenClawConfig,
+  client: GatewayClient | null,
+  sessionKey: string | undefined,
+  agentId?: string,
+): boolean {
+  try {
+    if (!hasPrivateMiniMeAgents()) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  const agent = resolveRequestedSessionAgentId(cfg, sessionKey, agentId);
+  return agent.ok && authorizePrivateMiniMeAgent({ cfg, client, agentId: agent.agentId }) === null;
+}
 function sharingSnapshot(
   target: SessionSharingTarget | null,
   sessionKey: string,
@@ -93,6 +112,9 @@ export function canReceiveSessionEvent(params: {
     operatorActor?.kind === "operator" &&
     authorizeCurrentOperatorRoleScopes(client, policyConfig)
   ) {
+    return false;
+  }
+  if (!sessionKeys.every((key) => canReadPrivateAgent(policyConfig, client, key, params.agentId))) {
     return false;
   }
   if (isGatewayAdmin(client)) {
@@ -447,15 +469,22 @@ export function createSessionListEntryFilter(
   const operatorActor = resolveGatewayOperatorRoleActor(params.client);
   const identity = sharingIdentity(params.client, operatorActor);
   if (isGatewayAdmin(params.client) || (!identity && operatorActor?.kind === "system")) {
-    return undefined;
+    return (key) => canReadPrivateAgent(params.cfg ?? {}, params.client, key);
   }
   if (!identity) {
-    return params.cfg?.gateway?.roles ? () => false : undefined;
+    return params.cfg?.gateway?.roles
+      ? () => false
+      : (key) => canReadPrivateAgent(params.cfg ?? {}, params.client, key);
   }
   const sessionCap = prepared
     ? prepared.sessionCap
     : params.cfg && operatorSessionCap(params.client, params.cfg);
-  return createProfileSessionEntryFilter({ profileId: identity.id, sessionCap }, isCreator);
+  const ordinary = createProfileSessionEntryFilter(
+    { profileId: identity.id, sessionCap },
+    isCreator,
+  );
+  return (key, entry) =>
+    canReadPrivateAgent(params.cfg ?? {}, params.client, key) && ordinary(key, entry);
 }
 
 export function createProfileSessionEntryFilter(

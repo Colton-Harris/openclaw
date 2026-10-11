@@ -123,6 +123,7 @@ export const en: TranslationMap & {
     execHost: "Codex exec",
   },
   agentsHome: {},
+  miniMe: {},
   common: {
     uploadsDisabled: "File and image uploads are disabled.",
     health: "Health",
@@ -1756,6 +1757,7 @@ export const en: TranslationMap & {
     device: "This Mac",
     devicePermissions: "Permissions",
     agentsHome: "Agents",
+    miniMe: "Mini Me",
     agents: "Agents",
     activity: "Activity",
     meetings: "Meetings",
@@ -1804,6 +1806,7 @@ export const en: TranslationMap & {
     device: "App settings and capabilities on this Mac.",
     devicePermissions: "Manage macOS access, location, and computer presence.",
     agentsHome: "Who is on your team and what they are doing",
+    miniMe: "Your perspective, connected to your agents.",
     agents: "Workspaces, tools, identities.",
     activity: "Recent sessions across people using this gateway.",
     meetings: "Meeting notes and transcripts across this gateway.",

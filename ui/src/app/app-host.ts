@@ -111,6 +111,11 @@ class OpenClawShell
   readonly linkReaderPanelElement = LINK_READER_PANEL_ELEMENT;
   readonly desktopPanelElement = DESKTOP_PANEL_ELEMENT;
   readonly execApprovalElement = EXEC_APPROVAL_ELEMENT;
+  readonly miniMeWelcomeElement = {
+    tagName: "openclaw-mini-me-welcome",
+    label: t("tabs.miniMe"),
+    loadModule: () => import("../components/mini-me-welcome.ts"),
+  } satisfies OptionalCustomElement;
   readonly onboardingMemoryImportElement = {
     tagName: "openclaw-onboarding-memory-import",
     label: t("onboarding.memoryImport.title"),

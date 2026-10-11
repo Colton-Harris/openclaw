@@ -46,6 +46,7 @@ import type {
 } from "../infra/update-run-interruption-contract.js";
 import type { UpdateRunWriteOperations } from "../infra/update-run-mutation.types.js";
 import type { UpdateRunReconciliationOperations } from "../infra/update-run-reconciliation.types.js";
+import type { MiniMeStateWorkerOperations } from "../mini-me/persistence.types.js";
 import type { PluginStateWorkerOperations } from "../plugin-state/plugin-state-worker-contract.js";
 import type { PluginMetadataStateSelector } from "../plugins/installed-plugin-index-row.js";
 import type { CaptureWorkerOperations } from "../proxy-capture/store.worker-contract.js";
@@ -85,6 +86,7 @@ export type OpenClawStateWorkerOperations = RegisteredStateWorkerOperations &
   SessionUpstreamWorkerOperations &
   PluginStateWorkerOperations &
   UserPreferenceWorkerOperations &
+  MiniMeStateWorkerOperations &
   CronStateWorkerOperations &
   TranscriptReadOperations &
   OpenClawStateLeaseLifecycleOperations & {

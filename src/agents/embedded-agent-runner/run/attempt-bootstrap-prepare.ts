@@ -27,7 +27,8 @@ import type { EmbeddedRunAttemptBase, EmbeddedRunAttemptParams } from "./types.j
 
 export async function prepareEmbeddedAttemptBootstrap(params: {
   attempt: Omit<EmbeddedRunAttemptBase, "workspaceDir" | "prompt" | "timeoutMs" | "runId"> &
-    Pick<EmbeddedRunAttemptParams, "operation">;
+    Pick<EmbeddedRunAttemptParams, "operation"> &
+    Partial<Pick<EmbeddedRunAttemptParams, "admittedRunContext">>;
   setup: Pick<
     EmbeddedAttemptSetup,
     "effectiveWorkspace" | "resolvedWorkspace" | "sessionAgentId"

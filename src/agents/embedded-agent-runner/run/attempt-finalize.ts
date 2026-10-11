@@ -324,6 +324,7 @@ export async function completeEmbeddedAttemptAfterTurn(
     }
     const reachedPromptBoundary = transcriptLeafId === null || entry?.id === transcriptLeafId;
     await runAgentEndSideEffectsAsync({
+      admittedRunContext: attempt.admittedRunContext,
       [completedTurnMessageAnchor]:
         sourceTarget && terminalEntry && reachedPromptBoundary
           ? captureCompletedTurnMessageAnchor(sessionManager, terminalEntry.id)

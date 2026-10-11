@@ -7,6 +7,7 @@ import type {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { isReplyDispatchDeliveryError } from "../../auto-reply/reply/reply-dispatch-outcome.js";
 import { sha256Hex } from "../../infra/crypto-digest.js";
+import type { MiniMeToolConsultation } from "../../mini-me/consultation.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveGlobalMap } from "../../shared/global-singleton.js";
 import { sleep } from "../../utils/sleep.js";
@@ -21,8 +22,10 @@ import {
   withAgentQuestionAnswerAuthority,
 } from "../harness/host-private-capabilities.js";
 import { ASK_USER_TOOL_DISPLAY_SUMMARY, describeAskUserTool } from "../tool-description-presets.js";
+import { adviseAskUserQuestions } from "./ask-user-mini-me-advice.js";
 import {
   AskUserToolSchema,
+  AskUserToolWithMiniMeSchema,
   DEFAULT_ASK_USER_TIMEOUT_SECONDS,
   QUESTION_RPC_GRACE_MS,
   type NormalizedAskUserParams,
@@ -420,7 +423,8 @@ function createAskUserPromptDelivery(
     hasSubscriber: reserved !== undefined || deliverPrompt !== undefined,
     markReady() {
       if (reserved || deliverPrompt) {
-        markAskUserPromptReady(questionId, questions);
+        // Execution may replace the prompt with advised questions before registration.
+        markAskUserPromptReady(questionId, state.questions);
       } else {
         transitionAskUserQuestion(state, { kind: "answerable" });
       }
@@ -461,6 +465,8 @@ export function createAskUserTool(params: {
   gatewayCall?: AgentHarnessQuestionGatewayCall | AgentQuestionDispatcher;
   /** How this run shows a prompt when its harness does not reserve one. */
   questionPrompt?: QuestionPromptDelivery;
+  /** Host-bound only for the owner's private attached run; absent runs ask ordinarily. */
+  miniMeConsultation?: MiniMeToolConsultation;
 }): AnyAgentTool {
   // Tool callbacks may run outside their creation scope; never borrow the invoker's owner.
   const questionAuthority = resolveAgentQuestionAnswerAuthority();
@@ -470,7 +476,7 @@ export function createAskUserTool(params: {
     name: "ask_user",
     displaySummary: ASK_USER_TOOL_DISPLAY_SUMMARY,
     description: describeAskUserTool(),
-    parameters: AskUserToolSchema,
+    parameters: params.miniMeConsultation ? AskUserToolWithMiniMeSchema : AskUserToolSchema,
     execute: async (toolCallId, args, signal) => {
       const questionId = buildAskUserQuestionId(
         toolCallId,
@@ -489,6 +495,7 @@ export function createAskUserTool(params: {
       const sessionKey = askUserSessionKey(params.sessionKey, params.agentId);
       const timeoutMs = normalized.timeoutSeconds * 1_000;
       const send = params.questionPrompt?.send;
+      let questions = normalized.questions;
       const { state, delivery } = createAskUserPromptDelivery(
         questionId,
         sessionKey,
@@ -500,7 +507,7 @@ export function createAskUserTool(params: {
               sendQuestionToolPrompt({
                 toolName: "ask_user",
                 questionId: id,
-                questions: normalized.questions,
+                questions,
                 send,
                 signal: prompt.signal,
               })
@@ -535,12 +542,28 @@ export function createAskUserTool(params: {
         }
         throw new Error("question.waitAnswer returned an invalid status");
       };
+      if (params.miniMeConsultation) {
+        try {
+          questions = await adviseAskUserQuestions({
+            consult: params.miniMeConsultation,
+            toolCallId,
+            questions,
+            preferenceScopes: normalized.preferenceScopes,
+            signal,
+          });
+        } catch (error) {
+          delivery.release();
+          throw error;
+        }
+        // Advice is fixed before registration, so any reserved or self-published prompt shows it.
+        state.questions = questions;
+      }
       try {
         state.claim = withAgentQuestionAnswerAuthority(questionAuthority, () =>
           registerPendingAgentQuestion({
             questionId,
             sessionKey,
-            questions: normalized.questions.map(({ questionId: id, ...question }) => ({
+            questions: questions.map(({ questionId: id, ...question }) => ({
               ...question,
               id,
             })),
@@ -565,7 +588,7 @@ export function createAskUserTool(params: {
               {},
               {
                 id: questionId,
-                questions: normalized.questions,
+                questions,
                 ...(params.agentId ? { agentId: params.agentId } : {}),
                 ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
                 ...(params.runId ? { runId: params.runId } : {}),

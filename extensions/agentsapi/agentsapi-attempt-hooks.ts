@@ -55,6 +55,7 @@ export function createAgentsApiAttemptHooks(
       ctx: hookContext,
     });
     const agentEnd = {
+      hostCapabilities: params.hostCapabilities,
       event: {
         runId: params.runId,
         messages: result.messagesSnapshot,

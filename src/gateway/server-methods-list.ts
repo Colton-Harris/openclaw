@@ -76,6 +76,7 @@ export const GATEWAY_EVENTS = [
   "device.pair.setup.completed",
   "device.pair.setup.deliveryUncertain",
   "users.prefs.changed",
+  "miniMe.changed",
   "skills.changed",
   "plugins.changed",
   "plugins.install.progress",

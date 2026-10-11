@@ -15,6 +15,7 @@ import {
 } from "../infra/sqlite-schema-issues.js";
 import { extractSqliteTableSchema } from "../infra/sqlite-schema-sql.js";
 import { readSqliteUserVersion } from "../infra/sqlite-user-version.js";
+import { withoutMiniMeAgentSchema } from "../mini-me/persistence.schema.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import {
   AGENT_V14_BOARD_SCHEMA_SQL,
@@ -71,10 +72,11 @@ export {
 
 /** Compare historical migration targets against only the representation they support. */
 export function getOpenClawAgentMigrationSchema(targetVersion: number): string {
+  const firstUseSchemaSql = withoutMiniMeAgentSchema(OPENCLAW_AGENT_SCHEMA_SQL);
   const sessionSchemaSql =
     targetVersion < SESSION_ENTRY_SNAPSHOTS_SCHEMA_VERSION
-      ? withoutSessionEntrySnapshotsSchema(OPENCLAW_AGENT_SCHEMA_SQL)
-      : OPENCLAW_AGENT_SCHEMA_SQL;
+      ? withoutSessionEntrySnapshotsSchema(firstUseSchemaSql)
+      : firstUseSchemaSql;
   const targetSchemaSql =
     targetVersion < AGENT_STORAGE_SCHEMA_VERSION
       ? withLegacyAgentStorageSchema(sessionSchemaSql, targetVersion)

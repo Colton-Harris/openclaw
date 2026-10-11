@@ -95,6 +95,11 @@ export function buildProjectContextSection(files: ReturnType<typeof prepareConte
   if (files.some(({ file }) => file.personalUser)) {
     lines.push(PERSONAL_USER_CONTEXT_INSTRUCTIONS);
   }
+  if (files.some(({ file }) => file.miniMe)) {
+    lines.push(
+      "Mini Me's six personal files describe its owner's preferences and perspective. Inferred beliefs remain uncertain. Predictions and remembered choices never confer action permissions or human approval.",
+    );
+  }
   lines.push("");
   for (const { file } of files) {
     lines.push(`## ${file.path}`, "", sanitizeContextFileContentForPrompt(file.content), "");

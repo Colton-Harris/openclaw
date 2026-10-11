@@ -69,7 +69,21 @@ export async function prepareCodexWorkspaceDeveloperInstructions(params: {
 }
 
 export async function buildCodexWorkspaceBootstrapContext(params: {
-  params: EmbeddedRunAttemptParams;
+  params: Pick<
+    EmbeddedRunAttemptParams,
+    | "sessionId"
+    | "agentId"
+    | "config"
+    | "hostCapabilities"
+    | "bootstrapUserProfileId"
+    | "chatType"
+    | "bootstrapContextMode"
+    | "bootstrapContextRunKind"
+    | "pluginHarnessToolPolicyRestricted"
+    | "disableTools"
+    | "toolsAllow"
+    | "sourceReplyDeliveryMode"
+  >;
   agentWorkspaceDeveloperInstructions?: string;
   resolvedWorkspace: string;
   executionWorkspace?: string;
@@ -108,6 +122,7 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
       toolNames: availableToolNames,
     });
     const prepared = await prepareAgentWorkspaceContext({
+      hostCapabilities: params.params.hostCapabilities,
       scope: "full",
       workspaceDir: params.resolvedWorkspace,
       config: params.params.config,
@@ -179,6 +194,10 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
         : undefined,
     };
   } catch (error) {
+    const agentId = params.params.agentId ?? params.sessionAgentId;
+    if (params.params.config?.agents?.entries?.[agentId]?.miniMe) {
+      throw error;
+    }
     embeddedAgentLog.warn("failed to load codex workspace bootstrap instructions", { error });
     return {
       bootstrapFiles: [],

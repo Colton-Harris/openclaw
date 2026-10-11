@@ -8,10 +8,15 @@ import {
   logCodeModeDiagnostic,
 } from "../../../logging/code-mode-diagnostic.js";
 import { resolveStagedInputMediaPaths } from "../../../media/staged-inputs.js";
+import type { MiniMeToolConsultation } from "../../../mini-me/consultation.js";
+import { hasActiveMiniMeAttachment } from "../../../mini-me/private-agent-projection.js";
 import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
 import { getPluginToolMeta } from "../../../plugins/tool-metadata.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
-import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
+import {
+  readAdmittedRunOperatorAuthority,
+  resolveAdmittedRunActiveAssertion,
+} from "../../admitted-run-context.js";
 import {
   createOpenClawCodingToolsInternalAsync,
   resolveToolLoopDetectionConfig,
@@ -82,6 +87,13 @@ export async function prepareEmbeddedAttemptToolBase(params: {
   toolSearchCatalogExecutor: ToolSearchCatalogToolExecutor;
 }) {
   const { attempt } = params;
+  const admittedRunContext = attempt.admittedRunContext;
+  const miniMeOwnerId = readAdmittedRunOperatorAuthority(admittedRunContext)?.profileId;
+  const miniMeConfig = attempt.config;
+  const miniMeAgentId = params.setup.sessionAgentId;
+  const miniMeSessionKey = attempt.sessionKey;
+  const miniMeSessionId = attempt.sessionId;
+  const miniMeWorkspaceDir = params.setup.effectiveWorkspace;
   const completionCheck = attempt.completionCheck;
   const requireExplicitMessageTarget =
     attempt.requireExplicitMessageTarget ?? isSubagentSessionKey(attempt.sessionKey);
@@ -275,7 +287,36 @@ export async function prepareEmbeddedAttemptToolBase(params: {
     webSearchUnconfigured = false;
     let constructedToolsRaw: Awaited<ReturnType<typeof createOpenClawCodingToolsInternalAsync>> =
       [];
+    // This generation owns its final admitted tools. Retiring it must never let
+    // a retained consultation borrow a replacement generation's tool surface.
+    let miniMeAdmittedTools: typeof constructedToolsRaw = [];
+    let miniMeConsultation: MiniMeToolConsultation | undefined;
     if (shouldConstructTools) {
+      const assertCurrent = resolveAdmittedRunActiveAssertion(admittedRunContext, abortSignal);
+      if (
+        miniMeOwnerId &&
+        miniMeConfig &&
+        hasActiveMiniMeAttachment(miniMeOwnerId, miniMeAgentId)
+      ) {
+        if (!assertCurrent) {
+          throw new Error("Mini Me requires an active admitted run authority.");
+        }
+        assertCurrent();
+        const { bindMiniMeForRun } = await import("../../../mini-me/runtime-binding.js");
+        assertCurrent();
+        miniMeConsultation = await bindMiniMeForRun({
+          admittedRunContext,
+          config: miniMeConfig,
+          agentId: miniMeAgentId,
+          sessionKey: miniMeSessionKey,
+          sessionId: miniMeSessionId,
+          workspaceDir: miniMeWorkspaceDir,
+          signal: abortSignal,
+          assertCurrent,
+          getAdmittedTool: (name) => miniMeAdmittedTools.find((tool) => tool.name === name),
+        });
+        assertCurrent();
+      }
       const codingToolOptions: OpenClawCodingToolsOptions = {
         agentId: params.setup.sessionAgentId,
         ...buildConversationContext(),
@@ -298,6 +339,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
         pairedNodeComputerUse,
         conversationRecall: attempt.conversationRecall,
         memoryAudience: attempt.memoryAudience,
+        miniMeConsultation,
         oneShotCliRun: attempt.oneShotCliRun,
         toolSearchCatalogRef,
         codeModeSkills,
@@ -385,6 +427,11 @@ export async function prepareEmbeddedAttemptToolBase(params: {
     const toolsRaw = attempt.forceRestartSafeTools
       ? constructedToolsRaw.filter((tool) => isAgentToolRestartSafe(tool, restartSafetyOptions))
       : constructedToolsRaw;
+    if (miniMeConsultation) {
+      miniMeAdmittedTools = toolsRaw
+        .filter((tool) => tool.name === "write" || tool.name === "message")
+        .map((tool) => Object.freeze({ ...tool }));
+    }
     assertMemoryFlushPersistenceToolAvailable(toolsRaw, attempt.memoryFlushTools);
     if (attempt.forceRestartSafeTools) {
       log.info(

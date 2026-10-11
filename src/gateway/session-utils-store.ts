@@ -373,6 +373,7 @@ export async function listAgentsForGateway(
   cfg: OpenClawConfig,
   options?: {
     modelCatalogByAgentId?: SessionListModelCatalog;
+    visibleAgentIds?: ReadonlySet<string>;
     includeSystem?: boolean;
     httpAvatarBasePath?: string;
   },
@@ -395,6 +396,9 @@ export async function listAgentsForGateway(
       continue;
     }
     const agentId = normalizeAgentId(entry.id);
+    if (options?.visibleAgentIds && !options.visibleAgentIds.has(agentId)) {
+      continue;
+    }
     const avatar = normalizeOptionalString(entry.identity?.avatar);
     const httpAvatar =
       avatar && options?.httpAvatarBasePath !== undefined
@@ -424,7 +428,10 @@ export async function listAgentsForGateway(
   const provenanceById = new Map(
     provenanceRecords.map((record) => [record.agentId, record] as const),
   );
-  const agents = roster.map((entry) => {
+  const visibleRoster = options?.visibleAgentIds
+    ? roster.filter((entry) => options.visibleAgentIds!.has(entry.id))
+    : roster;
+  const agents = visibleRoster.map((entry) => {
     const { id } = entry;
     const execDefaults = resolveExecDefaults({ cfg, agentId: id, execApprovals });
     // This label must never overstate permissiveness. When sandbox policy can vary

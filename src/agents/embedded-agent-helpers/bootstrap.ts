@@ -401,6 +401,7 @@ export function buildBootstrapContextFiles(
         path: pathValue,
         content,
         ...(includePersonalUser && file.personalUser ? { personalUser: file.personalUser } : {}),
+        ...(file.miniMe ? { miniMe: true as const } : {}),
       });
     };
     if (file.missing) {

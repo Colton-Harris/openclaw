@@ -1,6 +1,7 @@
 import path from "node:path";
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import { Minimatch } from "minimatch";
+import type { MiniMeDocumentName } from "../../packages/gateway-protocol/src/schema/mini-me.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveHookConfig } from "../hooks/policy.js";
 import { resolveUserPath } from "../infra/home-dir.js";
@@ -35,7 +36,9 @@ export const WORKSPACE_BOOTSTRAP_FILENAMES = [
   DEFAULT_MEMORY_FILENAME,
 ] as const;
 
-export type WorkspaceBootstrapFileName = (typeof WORKSPACE_BOOTSTRAP_FILENAMES)[number];
+export type WorkspaceBootstrapFileName =
+  | (typeof WORKSPACE_BOOTSTRAP_FILENAMES)[number]
+  | MiniMeDocumentName;
 
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
@@ -44,6 +47,8 @@ export type WorkspaceBootstrapFile = {
   missing: boolean;
   /** Set only by the authenticated personal USER loader, never inferred from a path. */
   personalUser?: true;
+  /** Owner-private context admitted only for the Mini Me agent; never inherited by children. */
+  miniMe?: true;
 };
 
 export function resolveWorkspaceBootstrapPath(workspaceRoot: string, filePath: string): string {

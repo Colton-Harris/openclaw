@@ -29,6 +29,7 @@ import { registerMcpAppEnglish } from "../../ui/src/i18n/locales/en-mcp-app.ts";
 import { registerMcpEnglish } from "../../ui/src/i18n/locales/en-mcp.ts";
 import { registerMeetingsEnglish } from "../../ui/src/i18n/locales/en-meetings.ts";
 import { registerMemoryImportEnglish } from "../../ui/src/i18n/locales/en-memory-import.ts";
+import { registerMiniMeEnglish } from "../../ui/src/i18n/locales/en-mini-me.ts";
 import { registerModelAccountsEnglish } from "../../ui/src/i18n/locales/en-model-accounts.ts";
 import { registerModelControlsEnglish } from "../../ui/src/i18n/locales/en-model-controls.ts";
 import { registerModelSetupEnglish } from "../../ui/src/i18n/locales/en-model-setup.ts";
@@ -105,6 +106,7 @@ const sourceFiles = [
   "en-plugin-management.ts",
   "en-portals.ts",
   "en-profile.ts",
+  "en-mini-me.ts",
   "en-settings.ts",
   "en-sidebar-attention.ts",
   "en-skill-library.ts",
@@ -212,6 +214,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerPluginManagementEnglish.catalog,
     registerPortalsEnglish.catalog,
     registerProfileEnglish.catalog,
+    registerMiniMeEnglish.catalog,
     registerSettingsEnglish.catalog,
     registerSidebarAttentionEnglish.catalog,
     registerSkillWorkshopEnglish.catalog,

@@ -12,6 +12,7 @@ import type { GatewayRequestHandlers } from "./types.js";
 type CoreGatewayHandlerModuleLoader = () => Promise<GatewayRequestHandlers>;
 
 const CORE_GATEWAY_HANDLER_MODULES = {
+  "mini-me": () => import("./mini-me.js").then((module) => module.miniMeHandlers),
   agent: () => import("./agent.js").then((module) => module.agentHandlers),
   "agent-identity": () =>
     import("./agent-identity.js").then((module) => module.agentIdentityHandlers),

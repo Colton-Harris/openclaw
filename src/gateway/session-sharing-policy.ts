@@ -22,12 +22,14 @@ import {
   resolveGatewayOperatorRoleActor,
   resolveOperatorRolePolicy,
 } from "./operator-role-policy.js";
+import { authorizePrivateMiniMeAgent } from "./private-agent-access.js";
 import {
   authenticatedProfileUnavailableError,
   isGatewayClientProfilePending,
 } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient } from "./server-methods/types.js";
 import { isSessionCreatorProfile, prepareSessionCreatorProfile } from "./session-creator.js";
+import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
 import { captureIncognitoSessionMutationFacts } from "./session-sharing-incognito.js";
 import { resolveSessionStoreIdentity } from "./session-store-key.js";
 import type { GatewaySessionStoreDiscoveryCache } from "./session-utils-store-candidates.js";
@@ -394,6 +396,7 @@ export type PreparedSessionMutationFacts = {
 };
 
 /** Prepared facts carry no decision; current caller and configuration still determine access. */
+
 export function authorizePreparedSessionMutation(
   params: Parameters<typeof authorizeResolvedSessionMutation>[0],
   facts: PreparedSessionMutationFacts,
@@ -417,11 +420,23 @@ function authorizeSessionMutationTarget(
     membership: ReadonlySet<string>;
   },
 ): ErrorShape | null {
-  if (isGatewayAdmin(params.client) && !params.cfg.gateway?.roles) {
-    return null;
-  }
-  if (isGatewayClientProfilePending(params.client)) {
+  const unrestrictedAdmin = isGatewayAdmin(params.client) && !params.cfg.gateway?.roles;
+  if (!unrestrictedAdmin && isGatewayClientProfilePending(params.client)) {
     return authenticatedProfileUnavailableError();
+  }
+  const agent = resolveRequestedSessionAgentId(params.cfg, params.sessionKey, params.agentId);
+  if (agent.ok) {
+    const privateError = authorizePrivateMiniMeAgent({
+      cfg: params.cfg,
+      client: params.client,
+      agentId: agent.agentId,
+    });
+    if (privateError) {
+      return privateError;
+    }
+  }
+  if (unrestrictedAdmin) {
+    return null;
   }
   const target = readTarget();
   if (target) {

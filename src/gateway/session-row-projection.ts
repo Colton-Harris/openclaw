@@ -4,6 +4,7 @@ import { createSubagentSessionListReadView } from "../agents/subagents/registry/
 import { cloneEnvWithPlatformSemantics } from "../config/config-env-vars.js";
 import type { readPreparedSessionEntryChange } from "../config/sessions/session-accessor.sqlite-entry-cache-publication.js";
 import { resolveStateDir } from "../config/state-dir.js";
+import { prepareMiniMePrivateAgentProjection } from "../mini-me/private-agent-projection.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import {
   onSessionIdentityMutation,
@@ -126,7 +127,8 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
   const backfill = createSessionRowProjectionBackfill({
     ready: ensureMaterialized,
     read: (id) => rows.get(id),
-    current: (row) => !topologyDirty && records.ready(row) && isCurrent(row),
+    current: (row) =>
+      !topologyDirty && records.ready(row) && records.isCurrentProjectionRow(row, rows),
     publish: (row, fields) => revisions.publishTranscript(row, fields, cfg, metadata.current),
   });
   const archive = createSessionRowProjectionArchive({
@@ -506,7 +508,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     env,
     isActive: () => !disposed,
     stores: () => stores,
-    isCurrent,
+    isCurrent: (row: records.Row) => records.isCurrentProjectionRow(row, rows),
     matching,
     markRelated,
     put,
@@ -524,11 +526,6 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     ),
     onSessionIdentityMutation(generations.mutate),
   ];
-  function isCurrent(row: records.Row) {
-    return row.privateSource
-      ? records.isPrivateSourceCurrent(row.privateSource)
-      : records.isCurrentGeneration(row, rows.get(records.identity(row)));
-  }
   function prepareRead() {
     if (topologyDirty || !profiles.isUserProfileCatalogReady({ env })) {
       return false;
@@ -543,7 +540,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     dirty,
     refresh,
     describeArchived: (row) => archive.describe(row),
-    isCurrent,
+    isCurrent: (row: records.Row) => records.isCurrentProjectionRow(row, rows),
     materializePrivate: (row, repository) =>
       materialize(row, undefined, undefined, undefined, repository),
     preparePresentation(row) {
@@ -591,6 +588,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
   });
   await inOwnerContext(async () => {
     stop.push((await profiles.prepareUserProfileCatalog({ env })).release);
+    await prepareMiniMePrivateAgentProjection({ env });
     await ensureSessionGroupCatalog();
     for (;;) {
       await refreshBatch();
@@ -701,7 +699,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
         scope: scope.select,
       };
     },
-    isCurrent,
+    isCurrent: (row: records.Row) => records.isCurrentProjectionRow(row, rows),
     selectEntries,
     listCreatedActors: (): ReturnType<typeof creators.list> =>
       creators.list(() => projection.state.scope({}).paths, matching),

@@ -2695,3 +2695,100 @@ CREATE TABLE IF NOT EXISTS secret_store_entries (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS secret_store_entries_live_idx
   ON secret_store_entries (scope_kind, scope_id, name) WHERE deleted_at_ms IS NULL;
+
+-- Mini Me metadata has no learned content; first opt-in owns installation.
+CREATE TABLE IF NOT EXISTS mini_me_profiles (
+  owner_id TEXT NOT NULL REFERENCES user_profiles(id),
+  mini_me_id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 80),
+  lifecycle TEXT NOT NULL CHECK(lifecycle IN ('preparing','active','disabling','disabled','deleting','deleted')),
+  learning_paused INTEGER NOT NULL CHECK(learning_paused IN (0,1)),
+  generation INTEGER NOT NULL CHECK(generation >= 0),
+  revision INTEGER NOT NULL CHECK(revision >= 0),
+  models_json TEXT NOT NULL CHECK(json_valid(models_json)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mini_me_profiles_owner_live ON mini_me_profiles(owner_id) WHERE lifecycle <> 'deleted';
+CREATE INDEX IF NOT EXISTS idx_mini_me_profiles_owner_updated ON mini_me_profiles(owner_id, updated_at);
+CREATE TABLE IF NOT EXISTS mini_me_attachments (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_profiles(mini_me_id),
+  target_agent_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('dont-decide','safe','auto','all')),
+  revision INTEGER NOT NULL CHECK(revision >= 0),
+  budget_epoch INTEGER NOT NULL CHECK(budget_epoch > 0),
+  detached INTEGER NOT NULL CHECK(detached IN (0,1)),
+  PRIMARY KEY(owner_id,mini_me_id,target_agent_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_grants (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL,
+  target_agent_id TEXT NOT NULL,
+  attachment_revision INTEGER NOT NULL,
+  budget_epoch INTEGER NOT NULL CHECK(budget_epoch > 0),
+  grant_id TEXT NOT NULL,
+  effect TEXT NOT NULL CHECK(effect IN ('workspace.edit','message.send')),
+  resources_json TEXT NOT NULL CHECK(json_valid(resources_json)),
+  max_actions INTEGER NOT NULL CHECK(max_actions > 0),
+  max_bytes INTEGER,
+  expires_at INTEGER NOT NULL,
+  reserved_count INTEGER NOT NULL DEFAULT 0 CHECK(reserved_count >= 0),
+  consumed_count INTEGER NOT NULL DEFAULT 0 CHECK(consumed_count >= 0),
+  charged_bytes INTEGER NOT NULL DEFAULT 0 CHECK(charged_bytes >= 0),
+  PRIMARY KEY(owner_id,mini_me_id,target_agent_id,attachment_revision,grant_id),
+  FOREIGN KEY(owner_id,mini_me_id,target_agent_id) REFERENCES mini_me_attachments(owner_id,mini_me_id,target_agent_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_reservations (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL,
+  target_agent_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  reservation_id TEXT NOT NULL UNIQUE,
+  profile_generation INTEGER NOT NULL,
+  attachment_revision INTEGER NOT NULL,
+  grant_id TEXT NOT NULL,
+  prediction_id TEXT NOT NULL,
+  option_id TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  bytes INTEGER NOT NULL CHECK(bytes >= 0),
+  state TEXT NOT NULL CHECK(state IN ('reserved','consumed','not-dispatched','succeeded','failed','unknown')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY(owner_id,mini_me_id,action_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_mini_me_reservations_grant ON mini_me_reservations(owner_id,mini_me_id,target_agent_id,attachment_revision,grant_id,state);
+CREATE TABLE IF NOT EXISTS mini_me_state_operations (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+  PRIMARY KEY(owner_id,mini_me_id,operation_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS mini_me_data_changes (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_profiles(mini_me_id),
+  change_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  change_json TEXT NOT NULL CHECK(json_valid(change_json)),
+  PRIMARY KEY(owner_id,mini_me_id,change_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_root_operations (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  request_fingerprint TEXT NOT NULL,
+  prediction_id TEXT,
+  state TEXT NOT NULL CHECK(state IN ('pending','complete')),
+  created_at INTEGER NOT NULL,
+  profile_json TEXT NOT NULL CHECK(json_valid(profile_json)),
+  PRIMARY KEY(owner_id,mini_me_id,operation_id),
+  UNIQUE(owner_id,operation_id)
+) STRICT;
+-- END MINI ME FEATURE SCHEMA

@@ -6,6 +6,7 @@ import {
   QuestionRequestQuestionSchema,
   type QuestionRequestQuestion,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { MiniMeChoiceSchema } from "../../../packages/gateway-protocol/src/schema/mini-me.js";
 import { questionShapeError } from "../../gateway/question-validation.js";
 import { ToolInputError } from "./common.js";
 
@@ -18,7 +19,7 @@ export type NormalizedAskUserParams = ReturnType<typeof normalizeAskUserParams>;
 
 /** Validates and canonicalizes model-authored ask_user arguments. */
 export function normalizeAskUserParams(value: unknown) {
-  if (!Value.Check(AskUserToolSchema, value)) {
+  if (!Value.Check(AskUserToolWithMiniMeSchema, value)) {
     throw new ToolInputError("ask_user arguments do not match the model-facing question contract");
   }
   const questions: QuestionRequestQuestion[] = value.questions.map((question) => ({
@@ -51,7 +52,14 @@ export function normalizeAskUserParams(value: unknown) {
     throw new ToolInputError(semanticError);
   }
 
-  return { questions, timeoutSeconds: normalizeQuestionTimeoutSeconds(value.timeoutSeconds) };
+  return {
+    questions,
+    // Mini Me relevance hint only; never part of the Gateway question contract.
+    preferenceScopes: questions.map(
+      (question, index) => value.questions[index]?.preferenceScope?.trim() || question.header,
+    ),
+    timeoutSeconds: normalizeQuestionTimeoutSeconds(value.timeoutSeconds),
+  };
 }
 
 /** Shared human-question wait contract, including credential entry and harness watchdogs. */
@@ -110,6 +118,28 @@ export const AskUserToolSchema = Type.Object(
         description:
           "Maximum human wait in seconds; default 900, clamped 30-3600. Earlier run cancellation or overall run timeout still applies.",
       }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+// Keep the ordinary model-facing tool unchanged when Mini Me is not attached.
+export const AskUserToolWithMiniMeSchema = Type.Object(
+  {
+    ...AskUserToolSchema.properties,
+    questions: Type.Array(
+      Type.Object(
+        {
+          ...AskUserQuestionSchema.properties,
+          preferenceScope: Type.Optional({
+            ...MiniMeChoiceSchema.properties.scope,
+            description:
+              "Optional preference topic for an attached Mini Me adviser; defaults to header. Relevance hint only, never permission.",
+          }),
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1, maxItems: 3 },
     ),
   },
   { additionalProperties: false },

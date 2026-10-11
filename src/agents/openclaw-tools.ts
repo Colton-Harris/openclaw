@@ -77,6 +77,7 @@ import { createImageTool } from "./tools/image-tool.js";
 import { callAgentToolGatewayRequest } from "./tools/in-process-gateway.js";
 import { createInstalledSkillTools } from "./tools/installed-skill-tools.js";
 import { createMessageTool } from "./tools/message-tool-execution.js";
+import { createMiniMeTool } from "./tools/mini-me-tool.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -481,6 +482,7 @@ export function createOpenClawTools(
         }),
     heartbeatTool,
     createDecisionTool(sessionAgentId, options),
+    createMiniMeTool(options?.miniMeConsultation),
     createTtsTool({ ...options, agentId: sessionAgentId }),
     options?.githubPublicationAvailable !== undefined ? createGitHubIdentityStatusTool() : null,
     options?.githubPublicationAvailable === true ? createGitHubPublishTool() : null,

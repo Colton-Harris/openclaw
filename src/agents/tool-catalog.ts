@@ -87,6 +87,7 @@ function coreTools(
 const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   ...coreTools("agents", { profiles: ["coding", "messaging"], includeInOpenClawGroup: true }, [
     ["decision_evaluate", "Evaluate explicit evidence with the agent's decision model"],
+    ["mini_me", "Consult the owner's attached Mini Me for a structured choice"],
   ]),
   ...coreTools("fs", { profiles: ["coding"], executionLocation: "placement" }, [
     ["ls", "List directory entries"],

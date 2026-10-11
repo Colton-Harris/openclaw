@@ -54,6 +54,7 @@ import {
   type SessionSharingTarget,
 } from "./session-sharing-policy.js";
 import { captureSessionMutationRouting } from "./session-sharing-preparation.js";
+import { authorizePrivateMiniMeSessionTargets } from "./session-sharing-private-agent.js";
 import {
   createSessionListEntryFilter,
   createSessionSharingInputAuthority,
@@ -116,12 +117,15 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
   error: ErrorShape | null;
 } {
   let params = { ...request };
+  // Resolve runtime config at most once per request and only when a path needs it. The context
+  // getter reloads/resolves gateway config, so non-session requests (the vast majority) must not
+  // pay it. Group discovery and the authorization loop then share one snapshot, so a mid-request
+  // config change cannot split target discovery from authorization.
+  let cachedCfg: OpenClawConfig | undefined;
+  const getCfg = (): OpenClawConfig => (cachedCfg ??= params.context.getRuntimeConfig());
   params.preparedProfiles?.readCurrent();
   if (params.method === "chat.send") {
-    const normalized = resolveChatSendAuthorizationParams(
-      params.context.getRuntimeConfig(),
-      params.requestParams,
-    );
+    const normalized = resolveChatSendAuthorizationParams(getCfg(), params.requestParams);
     if (!normalized.ok) {
       return { error: normalized.error };
     }
@@ -136,15 +140,21 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
   const bindsProgressLifecycle =
     params.method === "progressCard.put" || params.method === "progressCard.refresh";
   const adminBypass = isGatewayAdmin(params.client) && !authorizesAgentRun;
-  if (adminBypass && !bindsProgressLifecycle && !params.expectedTarget) {
-    return { error: null };
-  }
+  // A pending profile cannot prove private ownership yet; keep its retryable gate ahead of the
+  // private check, which still precedes every administrative shortcut.
   if (
     !adminBypass &&
     isGatewayClientProfilePending(params.client) &&
     isSessionProfileDependentMethod(params.method)
   ) {
     return { error: authenticatedProfileUnavailableError() };
+  }
+  const privateError = authorizePrivateMiniMeSessionTargets(params, getCfg);
+  if (privateError) {
+    return { error: privateError };
+  }
+  if (adminBypass && !bindsProgressLifecycle && !params.expectedTarget) {
+    return { error: null };
   }
   // The role cap precedes handler visibility filtering on the current exact row.
   if (params.method === "sessions.describe") {
@@ -153,12 +163,6 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
   if (params.method === "sessions.list") {
     return { error: null };
   }
-  // Resolve runtime config at most once per request and only when a path needs it. The context
-  // getter reloads/resolves gateway config, so non-session requests (the vast majority) must not
-  // pay it. Group discovery and the authorization loop then share one snapshot, so a mid-request
-  // config change cannot split target discovery from authorization.
-  let cachedCfg: OpenClawConfig | undefined;
-  const getCfg = (): OpenClawConfig => (cachedCfg ??= params.context.getRuntimeConfig());
   const getPolicyConfig = () => params.context.getCommittedRuntimeConfig?.() ?? getCfg();
   const consuming = createSessionSharingConsumption({
     client: params.client,

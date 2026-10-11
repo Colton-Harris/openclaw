@@ -26,6 +26,16 @@ import {
 export const AGENT_SCHEMA_COMPATIBILITY = {
   allowCompatibleAdditiveColumns: true,
   allowedMissingTables: [
+    "mini_me_content",
+    "mini_me_sources",
+    "mini_me_beliefs",
+    "mini_me_documents",
+    "mini_me_suppressions",
+    "mini_me_predictions",
+    "mini_me_outcomes",
+    "mini_me_content_operations",
+    "mini_me_learning_keys",
+    "mini_me_action_restores",
     "session_reactions",
     "memory_entry_origins",
     "memory_session_tombstones",

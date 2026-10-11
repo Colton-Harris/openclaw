@@ -38,6 +38,7 @@ export async function loadCopilotWorkspaceInstructions(params: {
     const bootstrapContext = await resolveBootstrapContextForRun({
       workspaceDir,
       config: attempt.config,
+      hostCapabilities: attempt.hostCapabilities,
       sessionKey: readNonBlankString((attempt as { sessionKey?: unknown }).sessionKey),
       sessionId: readNonBlankString(attempt.sessionId),
       chatType: attempt.chatType,
@@ -54,6 +55,9 @@ export async function loadCopilotWorkspaceInstructions(params: {
     });
     return renderCopilotWorkspaceBootstrapInstructions(contextFiles);
   } catch (error) {
+    if (attempt.agentId && attempt.config?.agents?.entries?.[attempt.agentId]?.miniMe) {
+      throw error;
+    }
     params.warn?.(
       `[copilot-attempt] failed to load workspace bootstrap instructions: ${
         error instanceof Error ? error.message : String(error)

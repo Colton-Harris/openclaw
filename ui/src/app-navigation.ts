@@ -20,6 +20,7 @@ type NavigationPresentation = readonly [icon: IconName, titleKey: string, subtit
 // Workboard is plugin-owned and enters the zone through its Control UI descriptor.
 export const SIDEBAR_NAV_ROUTES = [
   "agents-home",
+  "mini-me",
   "dashboards",
   "usage",
   "cron",
@@ -59,7 +60,7 @@ export type SidebarZoneEntry =
 // Keep the highest-value operational destinations visible on first use. Users
 // can still replace this route set through the customize menu.
 export const DEFAULT_SIDEBAR_ENTRIES = (
-  ["agents-home", "dashboards", "systems", "cron", "plugins"] as const
+  ["agents-home", "mini-me", "dashboards", "systems", "cron", "plugins"] as const
 ).map((route) => serializeSidebarEntry({ type: "route", route }));
 
 /**
@@ -329,6 +330,7 @@ function navigationPresentation(icon: IconName, key: string): NavigationPresenta
 const NAVIGATION_PRESENTATION: Record<NavigationRouteId, NavigationPresentation> = {
   settings: ["settings", "nav.settings", "common.settingsSections"],
   "agents-home": navigationPresentation("bot", "agentsHome"),
+  "mini-me": navigationPresentation("wandSparkles", "miniMe"),
   agents: navigationPresentation("bot", "agents"),
   activity: navigationPresentation("activity", "activity"),
   meetings: navigationPresentation("book", "meetings"),

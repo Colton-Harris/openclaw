@@ -1,6 +1,7 @@
 import type { Result } from "@openclaw/normalization-core/result";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ErrorShape } from "../../packages/gateway-protocol/src/index.js";
+import type { AdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
 import { isEmbeddedAgentRunActive } from "../agents/embedded-agent-runner/runs.js";
 import { withSessionEntriesFromStoresInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import type { InternalSessionEntry } from "../config/sessions/types.js";
@@ -21,6 +22,7 @@ export async function readSessionCreateTarget(
   target: GatewaySessionStoreTarget,
   expectedSessionId: string | undefined,
   lifecycleIdentities: readonly string[],
+  operatorAuthority?: AdmittedRunOperatorAuthority,
 ): Promise<Result<InternalSessionEntry | undefined, ErrorShape>> {
   const assertRoutingCurrent = captureSessionMutationRouting(params.cfg);
   const assertCurrent = () => {
@@ -78,6 +80,7 @@ export async function readSessionCreateTarget(
       const creationError = authorizeGatewaySessionCreation({
         cfg: params.cfg,
         agentId: target.agentId,
+        operatorAuthority,
         ...(params.operatorRoleActor
           ? { actor: params.operatorRoleActor }
           : { profileId: params.requestingOperatorProfileId }),

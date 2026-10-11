@@ -7,6 +7,8 @@ import { getAgentRunLifecycleGeneration } from "../../infra/agent-run-registry.j
 import { createAgentTurnService } from "../agent-turn/agent-turn-service.js";
 import type { AgentJobSession } from "../agent-turn/types.js";
 import { operatorSessionCap } from "../operator-role-policy.js";
+import { authorizePrivateMiniMeAgent } from "../private-agent-access.js";
+import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import {
   createSessionListEntryFilter,
   isGatewayAdmin,
@@ -29,6 +31,22 @@ const agentWaitHandler: GatewayRequestHandlers["agent.wait"] = async ({
   const gatewayClient = client ?? null;
   const prepared = createAgentTurnService({ context, isWebchatConnect }).prepareWaitForTurn(params);
   const authorizeWait = (run: Readonly<AgentJobSession> | undefined) => {
+    const currentConfig = context.getRuntimeConfig();
+    const agent = run
+      ? resolveRequestedSessionAgentId(currentConfig, run.sessionKey, run.agentId)
+      : undefined;
+    if (
+      run &&
+      (!agent?.ok ||
+        authorizePrivateMiniMeAgent({
+          cfg: currentConfig,
+          client: gatewayClient,
+          agentId: agent.agentId,
+        }))
+    ) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "agent run was not found"));
+      return false;
+    }
     if (!gatewayClient?.authenticatedUserProfile || isGatewayAdmin(gatewayClient)) {
       return true;
     }

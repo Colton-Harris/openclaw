@@ -178,6 +178,32 @@ describe("agents delete command", () => {
     });
   });
 
+  it("keeps Mini Me deletion with its erasure owner even when the Gateway is unavailable", async () => {
+    await withStateDirEnv("agents-delete-mini-me-", async ({ stateDir }) => {
+      const base = config(stateDir);
+      const cfg: OpenClawConfig = {
+        ...base,
+        agents: {
+          ...base.agents,
+          entries: {
+            ...base.agents?.entries,
+            ops: {
+              ...base.agents?.entries?.ops,
+              miniMe: { ownerProfileId: "synthetic-owner", profileId: "synthetic-mini-me" },
+            },
+          },
+        },
+      };
+      await arrange({ stateDir, cfg, sessions: {} });
+      await agentsDeleteCommand({ id: "ops", force: true }, runtime);
+      expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Mini Me settings"));
+      expect(runtime.exit).toHaveBeenCalledWith(1);
+      expect(gatewayMocks.callGateway).not.toHaveBeenCalled();
+      expectNoLocalMutation();
+      expect(readAgentDeletionJournal("ops")).toBeUndefined();
+    });
+  });
+
   it("rejects an unrepresentable id before targeting the default agent", async () => {
     await withStateDirEnv("agents-delete-", async ({ stateDir }) => {
       const cfg = config(stateDir);
