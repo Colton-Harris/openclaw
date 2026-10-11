@@ -1,3 +1,4 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { bindRequesterProfile } from "../../auto-reply/requester-profile.js";
 import type { RuntimeMsgContext as MsgContext } from "../../auto-reply/templating.js";
@@ -53,6 +54,52 @@ function resolveChatSendManagedMedia(
 
 type ChatSendManagedMediaApplyMode = "replace-empty" | "append-missing";
 
+// Preserve the installed, narrowly bound Jev shadow ingress repair on local upgrade.
+// This projects verified metadata only; it grants no tool or approval authority.
+function resolvePrivateNativeShadowOwner(
+  client: GatewayRequestHandlerOptions["client"],
+  request: Pick<
+    NormalizedChatSendRequest,
+    "clientInfo" | "suppressCommandInterpretation" | "systemInputProvenance"
+  >,
+  session: Pick<PreparedChatSendSession, "agentId" | "sessionKey"> &
+    Partial<Pick<PreparedChatSendSession, "cfg" | "entry">>,
+): string | undefined {
+  const profile = client?.authenticatedUserProfile;
+  const adviser = session.cfg?.plugins?.entries?.["jev-memory-adviser"];
+  const config = adviser?.config;
+  if (
+    request.clientInfo?.id !== "openclaw-macos" ||
+    !profile?.profileId ||
+    !(client?.authenticatedUserId || client?.internal?.authenticatedOperator) ||
+    client.invalidated ||
+    client.connectionSignal?.aborted ||
+    client.internal?.syntheticClient ||
+    client.internal?.senderAttribution ||
+    request.suppressCommandInterpretation ||
+    (request.systemInputProvenance && request.systemInputProvenance.kind !== "external_user") ||
+    session.agentId !== "main" ||
+    session.entry?.visibility !== "draft" ||
+    session.entry?.createdActor?.type !== "human" ||
+    session.entry.createdActor.id !== profile.profileId ||
+    adviser?.enabled !== true ||
+    !config ||
+    config.mode !== "shadow" ||
+    config.ownerAgentId !== "main" ||
+    !Array.isArray(config.ownerBindings) ||
+    !config.ownerBindings.some(
+      (binding) =>
+        isRecord(binding) &&
+        binding.sessionKey === session.sessionKey &&
+        binding.channel === "webchat" &&
+        binding.senderId === profile.profileId,
+    )
+  ) {
+    return undefined;
+  }
+  return profile.profileId;
+}
+
 export function applyChatSendManagedMedia(
   ctx: MsgContext,
   media: MediaFact[],
@@ -99,7 +146,7 @@ export function prepareChatSendUserTurn(params: {
     | "toolBindings"
   >;
   session: Pick<PreparedChatSendSession, "agentId" | "clientRunId" | "sessionKey"> &
-    Partial<Pick<PreparedChatSendSession, "cfg">>;
+    Partial<Pick<PreparedChatSendSession, "cfg" | "entry">>;
   admission: Pick<AdmittedChatSend, "originatingRoute"> &
     Partial<Pick<AdmittedChatSend, "assertWorkAdmissionCurrent" | "assertClientUploadAllowed">>;
   attachments: PreparedChatSendAttachments;
@@ -231,6 +278,11 @@ export function prepareChatSendUserTurn(params: {
     GatewayRunToolBindings: request.toolBindings,
     GatewayUiCommandTarget: gatewayUiCommandTarget,
   };
+  const nativeShadowOwner = resolvePrivateNativeShadowOwner(client, request, session);
+  if (nativeShadowOwner) {
+    ctx.InputProvenance ??= { kind: "external_user" };
+    ctx.SenderId = nativeShadowOwner;
+  }
   const requester = client?.authenticatedUserProfile;
   if (
     requester &&
