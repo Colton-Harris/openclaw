@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { captureMiniMeEffectAssertion } from "../mini-me/effect-scope.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { copyAgentToolMetadata } from "./agent-tool-metadata.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
@@ -67,9 +68,11 @@ export function captureAgentToolSourceExecutionGuard(signal?: AbortSignal): () =
   // neither diagnostic identity tokens nor their collection grant authority.
   const authority = getGatewayToolCallerIdentity()?.receiptAuthority;
   const assertBudgetCurrent = executionBudgetContext.getStore()?.assertCurrent;
+  const assertMiniMeEffectCurrent = captureMiniMeEffectAssertion();
   return () => {
     signal?.throwIfAborted();
     assertBudgetCurrent?.();
+    assertMiniMeEffectCurrent?.();
     if (authority?.() === false) {
       throw new Error("tool invocation authority is no longer active");
     }

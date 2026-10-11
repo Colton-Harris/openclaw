@@ -5,6 +5,7 @@ import { cloneEnvWithPlatformSemantics } from "../config/config-env-vars.js";
 import type { readPreparedSessionEntryChange } from "../config/sessions/session-accessor.sqlite-entry-cache-publication.js";
 import type { InternalSessionEntry as SessionEntry } from "../config/sessions/types.js";
 import { resolveStateDir } from "../config/state-dir.js";
+import { prepareMiniMePrivateAgentProjection } from "../mini-me/private-agent-projection.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import {
   onSessionIdentityMutation,
@@ -40,7 +41,7 @@ import { createSessionRowRefresh } from "./session-row-projection-refresh.js";
 import { createSessionRowProjectionTranscriptUpdates } from "./session-row-projection-transcript.js";
 import * as rowScope from "./session-row-scope.js";
 
-/** Committed publications own invalidation; each admitted physical store is hydrated once. */
+/** Committed publications invalidate once per admitted physical store. */
 export async function createSessionRowProjection(params: records.ProjectionOptions) {
   // Publications may borrow startup admission; projection work retains its own authority.
   const inOwnerContext = AsyncLocalStorage.snapshot();
@@ -195,7 +196,6 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     placementFacts.update(row, previous, (sessionId) =>
       [...(byKey.get(`id:${sessionId}`) ?? [])].flatMap((id) => rows.get(id) ?? []),
     );
-    // Index updates are synchronous; publish only after the accepted row is installed.
     revisions.replace(previous, row);
   }
   function acquireEntry(row: records.Row, storedEntry: SessionEntry | undefined) {
@@ -364,7 +364,6 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
         publish: (row) => markStoredRow(row, change, prepared),
       });
     }
-    // Dirty keys retain failed background work for the next reader.
     void ensureMaterialized().catch(() => {});
   }
   const { readSourceEntry, readChildLinks, readPreparedSpawnedBy } =
@@ -387,9 +386,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     configuredAgentIds = new Set(listAgentIds(cfg)),
     readRow = rowReads.readResidentSessionRow,
     databaseFacts?: records.PreparedSessionRowDatabaseFacts,
-    repositoryWorkspace?: Parameters<
-      typeof rowReads.readResidentSessionRow
-    >[0]["repositoryWorkspace"],
+    repositoryWorkspace?: Parameters<typeof readRow>[0]["repositoryWorkspace"],
   ) {
     if (!row.entry) {
       return false;
@@ -588,6 +585,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
   });
   await inOwnerContext(async () => {
     (await prepareUserProfileCatalog()).release();
+    await prepareMiniMePrivateAgentProjection({ env });
     await ensureSessionGroupCatalog();
     for (;;) {
       await refreshBatch();
@@ -713,5 +711,4 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
   };
   return projection;
 }
-
 export type SessionRowProjection = Awaited<ReturnType<typeof createSessionRowProjection>>;

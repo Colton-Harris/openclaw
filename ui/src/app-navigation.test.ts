@@ -451,6 +451,7 @@ describe("SIDEBAR_NAV_ROUTES", () => {
   it("keeps the canonical sidebar route order", () => {
     expect(SIDEBAR_NAV_ROUTES).toEqual([
       "agents-home",
+      "mini-me",
       "dashboards",
       "usage",
       "cron",

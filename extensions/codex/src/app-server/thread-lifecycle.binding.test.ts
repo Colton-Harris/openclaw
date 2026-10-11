@@ -458,18 +458,7 @@ async function createManualResumeFixture(
       if (options.competingLease === "release") {
         compete();
       }
-      return { status: "unsubscribed" };
-    }
-    if (method === "thread/resume") {
-      if (resumes > 0 && options.competingLease === "resume") {
-        compete();
-      }
-      if (
-        resumes++ > 0 &&
-        !options.systemError &&
-        options.receipt !== "none" &&
-        options.receipt !== "stale"
-      ) {
+      if (!options.systemError && options.receipt !== "none" && options.receipt !== "stale") {
         await harness.notify({
           method: "thread/status/changed",
           params: {
@@ -478,6 +467,13 @@ async function createManualResumeFixture(
           },
         });
       }
+      return { status: "unsubscribed" };
+    }
+    if (method === "thread/resume") {
+      if (resumes > 0 && options.competingLease === "resume") {
+        compete();
+      }
+      resumes++;
       return { ...response, thread };
     }
     if (method === "thread/inject_items") {

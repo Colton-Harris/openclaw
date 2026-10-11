@@ -211,6 +211,7 @@ export type UiSettings = {
   sidebarAgentsMode?: "chip" | "roster";
   sidebarPreTeamScope?: string | null; // null remembers All agents; undefined means unset.
   sidebarCollapsedAgentIds?: string[];
+  sidebarMiniMeManaged?: boolean; // Explicit sidebar customization after Mini Me became available.
   sidebarEntries: string[]; // Ordered routes, plugin navigation, and pinned sessions below Home
   sidebarLiveActivity?: boolean; // Latest activity under running sidebar sessions (default true)
   chatMessageMaxWidth?: string; // Browser-local centered chat transcript max width
@@ -553,6 +554,7 @@ export function loadUiPreferences(
       sidebarAgentsMode: parsed.sidebarAgentsMode === "roster" ? "roster" : "chip",
       sidebarPreTeamScope: normalizeSidebarPreTeamScope(parsed.sidebarPreTeamScope),
       sidebarCollapsedAgentIds: normalizeUniqueTrimmedStringList(parsed.sidebarCollapsedAgentIds),
+      sidebarMiniMeManaged: parsed.sidebarMiniMeManaged === true,
       sidebarEntries:
         normalizeSidebarEntries(parsedRecord.sidebarEntries) ??
         migratedSidebarEntries ??
@@ -701,6 +703,7 @@ export function saveSettings(next: UiSettings, options: { selectGateway?: boolea
       ? normalizeUniqueTrimmedStringList(next.sidebarCollapsedAgentIds)
       : undefined,
     sidebarEntries: next.sidebarEntries,
+    sidebarMiniMeManaged: next.sidebarMiniMeManaged === true ? true : undefined,
     sidebarLiveActivity: next.sidebarLiveActivity === false ? false : undefined,
     chatMessageMaxWidth: normalizeChatMessageMaxWidth(next.chatMessageMaxWidth),
     showAdvancedSettings: next.showAdvancedSettings === true ? true : undefined,

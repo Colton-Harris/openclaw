@@ -1670,6 +1670,7 @@
                       "concepts/memory-architecture",
                       "concepts/memory-provenance",
                       "concepts/user-model",
+                      "concepts/mini-me",
                       "concepts/standing-intents",
                       "concepts/memory-builtin",
                       "concepts/memory-honcho",

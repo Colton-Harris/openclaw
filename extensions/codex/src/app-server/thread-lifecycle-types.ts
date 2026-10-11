@@ -138,6 +138,7 @@ export type CodexThreadRequestContext = {
 
 export type CodexThreadResumePreparation = {
   modelProvider?: string | null;
+  waitUntilUnloaded: () => Promise<void>;
   assertConfigured: () => void;
   assertCurrent: () => void;
   dispose: () => void;

@@ -111,29 +111,26 @@ export function createCodexLifecycleHarness(options: {
       ) {
         current.subscribed = false;
       }
-      return response;
-    }
-    if (request.method === "thread/resume") {
-      if (!current) {
-        throw new Error(`Unseeded synthetic native resume: ${threadId}`);
-      }
-      // Stock 0.151.0 retains an unsubscribed loaded cache entry. Full resume overrides
-      // trigger teardown only when no subscriber can still observe that session.
+      // Codex 0.160 with thread_unload_delay_secs=0 tears down idle native
+      // state after the final unsubscribe. Custom responses retain denial cases.
       if (
-        current.loaded &&
+        !options.unsubscribe &&
+        current &&
         !current.subscribed &&
         isJsonObject(current.thread.status) &&
-        current.thread.status.type === "idle" &&
-        current.thread.canAcceptDirectInput !== false &&
-        (params.config !== undefined ||
-          params.developerInstructions !== undefined ||
-          params.baseInstructions !== undefined)
+        current.thread.status.type === "idle"
       ) {
         current.loaded = false;
         harness.send({
           method: "thread/status/changed",
           params: { threadId, status: { type: "notLoaded" } },
         });
+      }
+      return response;
+    }
+    if (request.method === "thread/resume") {
+      if (!current) {
+        throw new Error(`Unseeded synthetic native resume: ${threadId}`);
       }
       const response = await options.respond(request.method, request.params);
       if (current.loaded) {

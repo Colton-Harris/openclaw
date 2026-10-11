@@ -1,0 +1,169 @@
+.mini-me-welcome-dialog {
+  --openclaw-modal-width: 568px;
+}
+.mini-me-welcome {
+  overflow: auto;
+  max-height: var(--openclaw-modal-height-limit);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  color: var(--text);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-xl);
+}
+.mini-me-welcome__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.mini-me-welcome__close {
+  padding: var(--space-2);
+  color: var(--muted);
+}
+.mini-me-welcome__close svg {
+  width: 16px;
+  height: 16px;
+}
+.mini-me-welcome__art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 216px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-5) var(--space-3);
+  isolation: isolate;
+  background: radial-gradient(ellipse at center, var(--accent-subtle), transparent 70%);
+}
+.mini-me-welcome__line {
+  position: absolute;
+  left: var(--space-6);
+  right: var(--space-6);
+  top: 44%;
+  border-top: 1px solid var(--border-strong);
+  z-index: -1;
+}
+.mini-me-welcome__node {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+}
+.mini-me-welcome__node > span {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+.mini-me-welcome__node svg {
+  width: 26px;
+  height: 26px;
+}
+.mini-me-welcome__node--self > span {
+  width: 108px;
+  height: 108px;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  color: var(--accent);
+}
+.mini-me-welcome__node--self svg {
+  width: 48px;
+  height: 48px;
+}
+.mini-me-welcome__node--self strong {
+  font-size: var(--control-ui-text-sm);
+  color: var(--text-strong);
+}
+.mini-me-welcome__tag {
+  position: absolute;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+.mini-me-welcome__tag--taste {
+  top: 0;
+  left: 17%;
+  transform: rotate(-6deg);
+}
+.mini-me-welcome__tag--opinions {
+  top: 0;
+  right: 17%;
+  transform: rotate(6deg);
+}
+.mini-me-welcome__tag--values {
+  bottom: 0;
+  left: 18%;
+  transform: rotate(-4deg);
+}
+.mini-me-welcome__tag--preferences {
+  bottom: 0;
+  right: 10%;
+  transform: rotate(4deg);
+}
+.mini-me-welcome__copy h1 {
+  color: var(--text-strong);
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.045em;
+  margin: 0 0 var(--space-5);
+}
+.mini-me-welcome__copy p {
+  line-height: 1.7;
+  margin: 0 0 var(--space-5);
+}
+.mini-me-welcome__copy .mini-me-welcome__control {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+.mini-me-welcome__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+.mini-me-welcome__actions svg {
+  width: 16px;
+  height: 16px;
+}
+.mini-me-welcome__optional {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  margin: var(--space-5) 0 0;
+}
+@media (max-width: 400px) {
+  .mini-me-welcome {
+    padding: var(--space-4);
+  }
+  .mini-me-welcome__art {
+    min-height: 192px;
+    padding-inline: 0;
+  }
+  .mini-me-welcome__node > span {
+    width: 48px;
+    height: 48px;
+  }
+  .mini-me-welcome__node--self > span {
+    width: 82px;
+    height: 82px;
+  }
+  .mini-me-welcome__tag {
+    font-size: var(--control-ui-text-xs);
+    padding: var(--space-1) var(--space-2);
+  }
+  .mini-me-welcome__actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

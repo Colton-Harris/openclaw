@@ -28,6 +28,7 @@ export async function finalizeCopilotAttempt(
   const aborted = result.terminal.kind === "aborted" && result.terminal.source !== "yield_cleanup";
   const timedOut = result.terminal.kind === "timeout" && result.terminal.source !== "observation";
   const hookParams = {
+    hostCapabilities: params.hostCapabilities,
     event: {
       messages: result.messagesSnapshot,
       success: !aborted && !failure && !timedOut,

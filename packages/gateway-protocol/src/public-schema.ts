@@ -680,3 +680,5 @@ export {
 } from "./schema/sessions-activity-summary.js";
 
 export * from "./schema/sessions-involvement.js";
+
+export * from "./schema/mini-me.js";

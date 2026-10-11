@@ -82,6 +82,7 @@ export async function runCodexAgentEndHook(
 ): Promise<void> {
   const sideEffectParams = {
     ...hookParams,
+    hostCapabilities: params.hostCapabilities,
     ctx: { ...hookParams.ctx, config: params.config },
   };
   if (!params.messageChannel && !params.messageProvider) {

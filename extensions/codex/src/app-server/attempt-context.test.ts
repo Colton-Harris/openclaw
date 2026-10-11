@@ -21,6 +21,7 @@ import {
   resolveContextEngineBootstrapProjectionDecision,
 } from "./attempt-context.js";
 import { buildCodexWorkspaceBootstrapContext } from "./attempt-workspace-context.js";
+import { createCodexTestHostCapabilities } from "./host-capability.test-support.js";
 import type { CodexDynamicToolSpec } from "./protocol.js";
 import type { CodexAppServerContextEngineBinding } from "./session-binding.js";
 
@@ -370,6 +371,40 @@ describe("Codex app-server attempt context", () => {
       expect(context.bootstrapFiles).toEqual([]);
     },
   );
+
+  it("surfaces an unavailable private Mini Me file instead of answering without its persona", async () => {
+    const bootstrapRuntime = await import("openclaw/plugin-sdk/agent-harness-runtime");
+    const failure = new Error(
+      "Review and import the external SOUL.md edit in Mini Me before continuing",
+    );
+    vi.spyOn(bootstrapRuntime, "prepareAgentWorkspaceContext").mockRejectedValueOnce(failure);
+    const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
+    const workspaceDir = path.join(os.tmpdir(), "codex-mini-me-bootstrap");
+    await expect(
+      buildCodexWorkspaceBootstrapContext({
+        params: {
+          sessionId: "mini-me-session",
+          hostCapabilities: createCodexTestHostCapabilities(),
+          config: {
+            agents: {
+              entries: {
+                "mini-me-fixture": {
+                  miniMe: { ownerProfileId: "fixture-owner", profileId: "fixture-mini-me" },
+                },
+              },
+            },
+          },
+        },
+        resolvedWorkspace: workspaceDir,
+        effectiveWorkspace: workspaceDir,
+        sessionKey: "agent:mini-me-fixture:mini-me-session",
+        sessionAgentId: "mini-me-fixture",
+        tools: [],
+        ringZeroActive: false,
+      }),
+    ).rejects.toBe(failure);
+    expect(warn).not.toHaveBeenCalled();
+  });
 
   it("reads and compares thread-bootstrap context-engine projections", () => {
     const projection = readContextEngineThreadBootstrapProjection({

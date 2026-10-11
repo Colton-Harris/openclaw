@@ -49,6 +49,7 @@ import type {
 } from "./thread-lifecycle-types.js";
 import {
   releaseCodexBoundLiveThread,
+  releaseCodexConsumedLiveThread,
   throwIfCodexThreadLifecycleAborted,
   tryReuseCodexLiveThread,
 } from "./thread-lifecycle-warm.js";
@@ -619,11 +620,22 @@ export async function startOrResumeThread(
             buildLoadedPluginThreadConfig,
             prepareResume: () => prepareCodexThreadResume(params, resumeBinding, requestContext),
             releaseRetainedThread: async (assertCurrent) => {
-              await releaseRetainedThread(
+              const released = await releaseRetainedThread(
                 resumeBinding.threadId,
                 resumeBinding.clientId,
                 assertCurrent,
               );
+              assertCurrent();
+              if (!released || (resumeBinding.clientId && resumeBinding.clientId !== clientId)) {
+                await releaseCodexConsumedLiveThread({
+                  client: params.client,
+                  abandonClient: params.abandonClient,
+                  lifecycleTiming,
+                  threadId: resumeBinding.threadId,
+                  assertCurrent,
+                  withCurrent: authority.withCurrent,
+                });
+              }
             },
           });
           if (resumed) {

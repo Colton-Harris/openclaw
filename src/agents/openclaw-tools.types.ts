@@ -3,6 +3,7 @@ import type { InboundEventKind } from "../channels/inbound-event/kind.js";
 import type { ConversationReadInvocationOrigin } from "../channels/plugins/conversation-read-origin.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ExecMode } from "../infra/exec-approvals.js";
+import type { MiniMeToolConsultation } from "../mini-me/consultation.js";
 import type { MemoryAudience } from "../plugins/memory-provider-types.js";
 import type { SkillWorkshopRunOptions } from "../skills/workshop/types.js";
 import type { HookContext } from "./agent-tools.before-tool-call.js";
@@ -21,6 +22,8 @@ import type { SessionsYieldCallback } from "./tools/sessions-yield-tool.js";
 
 /** Options shared by the coding-tool factory and its OpenClaw tool surface. */
 export type OpenClawSharedToolsOptions = {
+  /** Host-only binding for an opted-in original owner's private admitted run. */
+  miniMeConsultation?: MiniMeToolConsultation;
   /** Complete model-discoverable catalog, prepared by the current host. */
   installedSkills?: readonly InstalledSkill[];
   /**

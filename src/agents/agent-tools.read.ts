@@ -41,6 +41,11 @@ import {
   wrapToolParamValidation,
 } from "./agent-tools.params.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
+import {
+  withMiniMeHostFileEffects,
+  withMiniMeSandboxFileEffects,
+  writeWorkspaceFile,
+} from "./agent-tools.workspace-write.js";
 import { collectTextContentBlocks } from "./content-blocks.js";
 import { writeHostFile } from "./host-file-write.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
@@ -1286,7 +1291,7 @@ function createSandboxReadOperations(params: SandboxToolParams) {
 
 function createSandboxMutationOperations(params: SandboxToolParams) {
   return withMemoryWriteProvenance(
-    {
+    withMiniMeSandboxFileEffects({
       resolveQueueKey: (absolutePath: string, signal?: AbortSignal) =>
         resolveSandboxFileQueueKey(params, absolutePath, signal),
       mkdir: async (dir: string) => {
@@ -1305,7 +1310,7 @@ function createSandboxMutationOperations(params: SandboxToolParams) {
       statFile: (absolutePath: string) =>
         params.bridge.stat({ filePath: absolutePath, cwd: params.root }),
       access: (absolutePath: string) => assertSandboxFileExists(params, absolutePath),
-    } as const,
+    } as const),
     params.memoryWriteProvenance,
   );
 }
@@ -1359,25 +1364,6 @@ async function statHostFile(absolutePath: string) {
   }
 }
 
-async function writeWorkspaceFile(
-  root: string,
-  getRoot: () => ReturnType<typeof fsRoot>,
-  absolutePath: string,
-  content: string,
-  abortSignal?: AbortSignal,
-) {
-  const assertCurrent = captureAgentToolSourceExecutionGuard(abortSignal);
-  // Reject lexical escapes before opening the lazily created workspace root.
-  const relative = toRelativeWorkspacePath(root, absolutePath);
-  const rootHandle = await getRoot();
-  // Absolute admitted paths preserve literal "~" workspace directories.
-  await rootHandle.write(path.resolve(rootHandle.rootReal, relative), content, {
-    mkdir: true,
-    mutationSymlinks: "follow-parents-within-root",
-    assertBeforeMutation: assertCurrent,
-  });
-}
-
 function createHostMutationOperations(
   root: string,
   options?: {
@@ -1390,8 +1376,9 @@ function createHostMutationOperations(
 
   if (!workspaceOnly) {
     // When workspaceOnly is false, allow writes anywhere on the host
+    const miniMeRoute = { resolvePath: resolveHostPath, abortSignal: options?.abortSignal };
     return withMemoryWriteProvenance(
-      {
+      withMiniMeHostFileEffects(root, miniMeRoute, {
         mkdir: async (dir: string) => {
           const resolved = resolveHostPath(dir);
           captureAgentToolSourceExecutionGuard(options?.abortSignal)();
@@ -1404,7 +1391,7 @@ function createHostMutationOperations(
         access: async (absolutePath: string) => {
           await fs.access(resolveHostPath(absolutePath));
         },
-      } as const,
+      } as const),
       options?.memoryWriteProvenance,
     );
   }
@@ -1416,7 +1403,7 @@ function createHostMutationOperations(
   let rootPromise: ReturnType<typeof fsRoot> | undefined;
   const getRoot = () => (rootPromise ??= fsRoot(root));
   return withMemoryWriteProvenance(
-    {
+    withMiniMeHostFileEffects(root, undefined, {
       mkdir: async (dir: string) => {
         const assertCurrent = captureAgentToolSourceExecutionGuard(options?.abortSignal);
         const relative = toRelativeWorkspacePath(root, dir, { allowRoot: true });
@@ -1492,7 +1479,7 @@ function createHostMutationOperations(
           throw error;
         }
       },
-    } as const,
+    } as const),
     options?.memoryWriteProvenance,
   );
 }

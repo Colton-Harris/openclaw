@@ -312,6 +312,75 @@ function observeCodexThreadConfiguration(
     modelProvider: thread.modelProvider,
     dispose,
     settledSystemError,
+    waitUntilUnloaded: async () => {
+      // Native unsubscribe only acknowledges this connection's subscription.
+      // The installed zero-delay policy still requires matching teardown proof.
+      const deadline = Date.now() + 10_000;
+      while (true) {
+        assertCurrent();
+        if (unloaded) {
+          return;
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error(
+            "Codex did not confirm unloading within the bounded handoff. The thread is preserved; stop competing native work before retrying.",
+          );
+        }
+        const snapshot = await params.client.request(
+          "thread/read",
+          { threadId: thread.id, includeTurns: false },
+          {
+            signal: params.signal,
+            timeoutMs: Math.min(1_000, remaining),
+            assertCurrent,
+            withCurrent: params.authority?.withCurrent,
+          },
+        );
+        assertCurrent();
+        if (snapshot.thread?.id !== thread.id) {
+          throw new Error(
+            "Codex unload read returned a different thread. The thread is preserved.",
+          );
+        }
+        if (snapshot.thread.status?.type === "notLoaded") {
+          unloaded = true;
+          return;
+        }
+        if (snapshot.thread.status?.type === "active") {
+          throw new CodexAdoptedThreadActiveError();
+        }
+        if (!isCodexThreadNonRunning(snapshot.thread.status)) {
+          throw new Error("Codex unload state is unverified. The thread is preserved.");
+        }
+        // A later read of loaded state supersedes teardown observed during that read.
+        unloaded = false;
+        await new Promise<void>((resolve, reject) => {
+          const signal = params.signal;
+          const onAbort = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            const reason: unknown = signal?.reason;
+            reject(
+              reason instanceof Error
+                ? reason
+                : new Error("Codex handoff canceled", { cause: reason }),
+            );
+          };
+          const timer = setTimeout(
+            () => {
+              signal?.removeEventListener("abort", onAbort);
+              resolve();
+            },
+            Math.min(50, Math.max(1, deadline - Date.now())),
+          );
+          signal?.addEventListener("abort", onAbort, { once: true });
+          if (signal?.aborted) {
+            onAbort();
+          }
+        });
+      }
+    },
     assertConfigured: () => {
       assertCurrent();
       // Native resume can acknowledge ignored overrides when another subscriber

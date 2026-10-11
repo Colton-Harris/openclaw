@@ -70,6 +70,13 @@ const CORE_TOOL_SECTION_ORDER: Array<{ id: string; label: string }> = [
 
 const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
+    id: "mini_me",
+    description: "Consult the owner's attached Mini Me for a structured choice",
+    sectionId: "agents",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "decision_evaluate",
     description: "Evaluate explicit evidence with the agent's decision model",
     sectionId: "agents",

@@ -591,6 +591,7 @@ export async function createGatewaySession(
       target,
       initialTargetEntry?.sessionId,
       targetLifecycleIdentities,
+      operatorAuthority,
     );
     if (!targetRead.ok) {
       return targetRead;
@@ -701,6 +702,7 @@ export async function createGatewaySession(
           const creationError = authorizeGatewaySessionCreation({
             cfg: params.cfg,
             agentId: target.agentId,
+            operatorAuthority,
             ...(params.operatorRoleActor
               ? { actor: params.operatorRoleActor }
               : { profileId: params.requestingOperatorProfileId }),

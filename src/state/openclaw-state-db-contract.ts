@@ -20,13 +20,20 @@ export type OpenClawStateSchemaReadAdmission = (database: DatabaseSync) => (() =
 // v7 retires the inert shared commitments table.
 // v6 makes every committed shared-state table part of the canonical runtime schema.
 // v5 records durable cloud-worker result refs on pending workspace fences.
-export const OPENCLAW_STATE_SCHEMA_VERSION = 20;
+export const OPENCLAW_STATE_SCHEMA_VERSION = 21;
 export const OPENCLAW_STATE_STRICT_SCHEMA_VERSION = 3;
 // Absence records lost history; only Doctor may reconstruct these on existing state.
 export const DOCTOR_OWNED_STATE_TABLES = ["agent_deletion_journal"] as const;
 // Privacy-sensitive feature tables remain absent even in fresh databases until
 // their feature-local first write. The canonical SQL still owns their shape.
 export const FIRST_USE_STATE_TABLES = [
+  "mini_me_profiles",
+  "mini_me_attachments",
+  "mini_me_grants",
+  "mini_me_reservations",
+  "mini_me_state_operations",
+  "mini_me_data_changes",
+  "mini_me_root_operations",
   "user_profile_identities",
   "local_workspace_projections",
   "update_runs",
@@ -58,6 +65,9 @@ export const FIRST_USE_STATE_TABLES = [
   "outbound_message_progress",
 ] as const;
 export const FIRST_USE_STATE_INDEXES = [
+  "idx_mini_me_profiles_owner_live",
+  "idx_mini_me_profiles_owner_updated",
+  "idx_mini_me_reservations_grant",
   "idx_user_profile_identities_profile_id",
   "idx_user_profile_identities_authorization",
   "idx_update_runs_created",

@@ -33,6 +33,7 @@ const PROFILE_DEPENDENT_CORE_METHODS = new Set([
   "users.unlinkAuthProfile",
 ]);
 const PROFILE_DEPENDENT_CORE_PREFIXES = [
+  "miniMe.",
   "artifacts.",
   "chat.",
   "conversations.",

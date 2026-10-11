@@ -49,6 +49,7 @@ const APP_ROUTE_DEFINITIONS = {
   apps: { path: "/apps" },
   portals: { path: "/portals" },
   "agents-home": { path: "/agents" },
+  "mini-me": { path: "/mini-me" },
   agents: { path: "/settings/agents" },
   channels: { path: "/settings/channels", aliases: ["/channels"] },
   connection: { path: "/settings/connection" },

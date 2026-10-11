@@ -1112,3 +1112,19 @@ textarea.settings-input {
 .quiet-hours-window .settings-row {
   padding-top: 0;
 }
+
+/* Feature settings may disable a whole form without introducing another surface. */
+.settings-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+}

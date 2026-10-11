@@ -416,6 +416,7 @@ export function buildBootstrapContextFiles(
       result.push({
         path: pathValue,
         content: cappedMissingText,
+        ...(file.miniMe ? { miniMe: true as const } : {}),
       });
       continue;
     }
@@ -449,6 +450,7 @@ export function buildBootstrapContextFiles(
     result.push({
       path: pathValue,
       content: contentWithinBudget,
+      ...(file.miniMe ? { miniMe: true as const } : {}),
       ...(file.personalUser ? { personalUser: file.personalUser } : {}),
     });
   }

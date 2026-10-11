@@ -11,6 +11,7 @@ import type { agentRosterCards } from "../../lib/agents/roster-activity.ts";
 import { formatRelativeTimestamp } from "../../lib/format.ts";
 import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
 import "../../styles/agents-home.css";
+import "../mini-me/attachment-summary.ts";
 
 registerAgentsHomeEnglish();
 
@@ -55,6 +56,9 @@ export function renderAgentsHome(props: AgentsHomeProps) {
           >`,
       })}
     </div>
+    <openclaw-mini-me-attachment-summary
+      .agentId=${context.agents.state.agentsList?.defaultId ?? ""}
+    ></openclaw-mini-me-attachment-summary>
     <section class="agents-home" aria-label=${titleForRoute("agents-home")}>
       ${!props.connected ? html`<div class="callout warn" role="status">${t("agentsHome.disconnected")}</div>` : nothing}
       ${

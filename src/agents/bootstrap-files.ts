@@ -7,12 +7,14 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isMemoryOriginEligibleForAutomaticInjection } from "../memory-host-sdk/host/types.js";
 import { classifyActiveMemoryWorkspacePaths } from "../plugins/memory-runtime.js";
 import { resolveUserPath } from "../utils.js";
+import type { AdmittedRunContext, PreparedAgentRunAdmission } from "./admitted-run-context.js";
 import { resolveAgentConfig, resolveDefaultAgentId } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { BootstrapContextRunKind } from "./bootstrap-mode.js";
 import { buildBootstrapContextForFiles } from "./embedded-agent-helpers/bootstrap.js";
 import type { EmbeddedContextFile } from "./embedded-agent-helpers/context-file.js";
+import type { AgentHarnessHostCapabilities } from "./harness/host-capability-types.js";
 import type { AgentRunSessionTarget } from "./run-session-target.types.js";
 import { getAgentWorkspaceAccess } from "./workspace-access.js";
 import { resolveWorkspaceBootstrapPath } from "./workspace-bootstrap-policy.js";
@@ -274,6 +276,9 @@ async function resolveIneligibleAutomaticMemoryFiles(params: {
 
 /** Resolves hook-adjusted, session-filtered bootstrap files for a run. */
 type BootstrapFileResolutionParams = {
+  hostCapabilities?: AgentHarnessHostCapabilities;
+  admittedRunContext?: AdmittedRunContext;
+  preparedRunAdmission?: PreparedAgentRunAdmission;
   bootstrapUserProfileId?: string;
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -308,6 +313,16 @@ async function resolveBootstrapFiles(
   hooks: BootstrapHookApplication,
 ): Promise<WorkspaceBootstrapFile[]> {
   const access = getAgentWorkspaceAccess(params.workspaceDir);
+  const miniMeFiles =
+    params.config && params.agentId && params.config.agents?.entries?.[params.agentId]?.miniMe
+      ? await (
+          await import("../mini-me/bootstrap.js")
+        ).loadPrivateMiniMeBootstrap({
+          ...params,
+          config: params.config,
+          agentId: params.agentId,
+        })
+      : [];
   const sessionKey = params.sessionKey ?? params.sessionId;
   const session = {
     sessionKey,
@@ -318,12 +333,14 @@ async function resolveBootstrapFiles(
     params.workspaceDir,
     params.readOnlyState,
   );
-  const sharedFiles = params.sessionKey
-    ? await getOrLoadBootstrapFiles({
-        workspaceDir: params.workspaceDir,
-        sessionKey: params.sessionKey,
-      })
-    : await loadWorkspaceBootstrapFiles(params.workspaceDir);
+  const sharedFiles = miniMeFiles.length
+    ? []
+    : params.sessionKey
+      ? await getOrLoadBootstrapFiles({
+          workspaceDir: params.workspaceDir,
+          sessionKey: params.sessionKey,
+        })
+      : await loadWorkspaceBootstrapFiles(params.workspaceDir);
   // Personal context is refreshed independently; never write it into the shared session snapshot.
   const personalFile = await loadPersonalUserBootstrapFile(
     params.workspaceDir,
@@ -390,7 +407,17 @@ async function resolveBootstrapFiles(
   if (getAgentWorkspaceAccess(params.workspaceDir) !== access) {
     throw new Error("Workspace access changed while preparing bootstrap context");
   }
-  return sanitizeBootstrapFiles(filteredUpdated, params.workspaceDir, params.warn);
+  const ownContext = params.contextMode === "lightweight" ? [] : miniMeFiles;
+  return sanitizeBootstrapFiles(
+    [
+      ...filteredUpdated.filter(
+        (file) => !miniMeFiles.some((personal) => personal.name === file.name),
+      ),
+      ...ownContext,
+    ],
+    params.workspaceDir,
+    params.warn,
+  );
 }
 
 /** Resolves both raw bootstrap metadata and bounded context files for a run. */

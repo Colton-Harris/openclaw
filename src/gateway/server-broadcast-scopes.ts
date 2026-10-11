@@ -60,6 +60,7 @@ const EVENT_SCOPE_GUARDS: Record<string, string[]> = {
   // behind the operator-scoped config.get.
   "config.changed": [READ_SCOPE],
   "users.prefs.changed": [SESSION_READ_SCOPE],
+  "miniMe.changed": [READ_SCOPE],
   "mentions.changed": [READ_SCOPE],
   "skills.changed": [READ_SCOPE],
   "plugins.changed": [READ_SCOPE],

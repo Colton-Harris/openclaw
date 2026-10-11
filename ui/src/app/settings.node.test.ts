@@ -320,6 +320,7 @@ describe("gateway settings and layout persistence", () => {
     writeStored({ ...readStored(), sidebarEntries: "route:tasks", navWidth: 220 });
     expect(loadSettings().sidebarEntries).toEqual([
       "route:agents-home",
+      "route:mini-me",
       "route:dashboards",
       "route:systems",
       "route:cron",

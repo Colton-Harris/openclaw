@@ -4,4 +4,5 @@ export type EmbeddedContextFile = {
   content: string;
   /** Preserved from authenticated bootstrap selection across workspace remapping. */
   personalUser?: true;
+  miniMe?: true;
 };

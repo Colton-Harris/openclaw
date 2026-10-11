@@ -141,6 +141,8 @@ export async function resumeExistingCodexThread(
       await abandonClient();
       throw new CodexThreadClientReplacementError();
     }
+    await configuration.waitUntilUnloaded();
+    configuration.assertCurrent();
     const authProfileId =
       resumeBinding.connectionScope === "supervision"
         ? undefined

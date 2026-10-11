@@ -53,6 +53,7 @@ export async function prepareEmbeddedAttemptBootstrap(params: {
   const resolveWorkspaceBootstrapFiles = (workspaceDir: string) =>
     resolveBootstrapFilesForRun({
       workspaceDir,
+      admittedRunContext: attempt.admittedRunContext,
       config: attempt.config,
       sessionKey: attempt.sessionKey,
       sessionId: attempt.sessionId,

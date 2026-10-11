@@ -187,6 +187,7 @@ export function registerThreadPolicyRefreshTests({
       const response = threadStartResult(threadId);
       const methods: string[] = [];
       let subscribed = true;
+      let loaded = true;
       const wire = await createLeasedLifecycleWireClient(
         path.join(tempDir, "agent"),
         (request) => {
@@ -201,20 +202,32 @@ export function registerThreadPolicyRefreshTests({
             return { requirements: null };
           }
           if (request.method === "thread/start" || request.method === "thread/resume") {
-            if (!subscribed && nativeStatus === "idle") {
+            if (request.method === "thread/resume" && nativeStatus === "idle") {
+              expect({ loaded, subscribed }).toEqual({ loaded: false, subscribed: false });
+            }
+            loaded = true;
+            subscribed = true;
+            return response;
+          }
+          if (request.method === "thread/read") {
+            return {
+              thread: {
+                ...response.thread,
+                status: { type: loaded ? nativeStatus : "notLoaded" },
+              },
+            };
+          }
+          if (request.method === "thread/unsubscribe") {
+            subscribed = false;
+            // The zero-delay native policy tears down idle state at unsubscribe,
+            // before resume can apply replacement configuration.
+            if (nativeStatus === "idle") {
+              loaded = false;
               wire.send({
                 method: "thread/status/changed",
                 params: { threadId, status: { type: "notLoaded" } },
               });
             }
-            subscribed = true;
-            return response;
-          }
-          if (request.method === "thread/read") {
-            return { thread: { ...response.thread, status: { type: nativeStatus } } };
-          }
-          if (request.method === "thread/unsubscribe") {
-            subscribed = false;
             return { status: "unsubscribed" };
           }
           if (request.method === "thread/inject_items") {

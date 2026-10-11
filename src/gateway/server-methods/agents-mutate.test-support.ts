@@ -1,9 +1,60 @@
 import path from "node:path";
-import { expect, it, type Mock, type vi } from "vitest";
+import { expect, it, vi, type Mock } from "vitest";
+import { prepareMiniMePrivateAgentProjection } from "../../mini-me/private-agent-projection.js";
 import type {
   AgentDeletionJournalCleanupPath,
   AgentDeletionJournalEntry,
 } from "../../state/agent-deletion-journal.js";
+
+/** Direct handlers retain real privacy readiness while workspace mocks stay scoped to fixtures. */
+export async function prepareAgentMutationPrivateOwnership(mocks: {
+  fsStat: Mock<(...args: unknown[]) => Promise<import("node:fs").Stats | null>>;
+  fsRealpath: Mock<(pathname: string) => Promise<string>>;
+}) {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  await mocks.fsStat.withImplementation(
+    async (pathname) => {
+      if (typeof pathname !== "string") {
+        throw new Error("Expected a worker module path");
+      }
+      return actual.stat(pathname);
+    },
+    () =>
+      mocks.fsRealpath.withImplementation(
+        async (pathname) => actual.realpath(pathname),
+        () => prepareMiniMePrivateAgentProjection(),
+      ),
+  );
+}
+
+/** Both config and filesystem effects retain the same composed, revocable deletion authority. */
+export function expectDeletionCommitGuards(mocks: {
+  writeConfigFile: Mock;
+  deleteWorkspaceState: Mock;
+  assertAgentDeletionCurrent: Mock<() => void>;
+}) {
+  expect(mocks.writeConfigFile).toHaveBeenCalledWith(expect.anything(), {
+    allowConfigSizeDrop: true,
+    assertConfigPathForWrite: expect.any(Function),
+    allowedAgentRosterRemovals: ["test-agent"],
+  });
+  const writeOptions = expectRecordFields(mockCallArg(mocks.writeConfigFile, 0, 1), {});
+  const assertWriteCurrent = writeOptions.assertConfigPathForWrite;
+  if (typeof assertWriteCurrent !== "function") {
+    throw new Error("Missing config write guard");
+  }
+  const authorityCalls = mocks.assertAgentDeletionCurrent.mock.calls.length;
+  assertWriteCurrent();
+  expect(mocks.assertAgentDeletionCurrent).toHaveBeenCalledTimes(authorityCalls + 1);
+  mocks.assertAgentDeletionCurrent.mockImplementationOnce(() => {
+    throw new Error("Synthetic deletion authority revoked");
+  });
+  expect(assertWriteCurrent).toThrow("Synthetic deletion authority revoked");
+  expect(mocks.deleteWorkspaceState).toHaveBeenCalledWith(
+    { workspaceDir: "/workspace/test-agent" },
+    { assertCurrent: assertWriteCurrent },
+  );
+}
 
 export function cleanupPath(
   pathname: string,

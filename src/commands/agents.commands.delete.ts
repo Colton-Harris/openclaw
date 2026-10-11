@@ -164,7 +164,17 @@ export async function agentsDeleteCommand(
   if (!opts.json && agentId !== input) {
     runtime.log(`Normalized agent id to "${agentId}".`);
   }
-  const configured = findAgentEntryIndex(listAgentEntries(cfg), agentId) >= 0;
+  const entries = listAgentEntries(cfg);
+  const entryIndex = findAgentEntryIndex(entries, agentId);
+  const configured = entryIndex >= 0;
+  if (entries[entryIndex]?.miniMe) {
+    failAgentsDelete(
+      opts,
+      runtime,
+      "Delete this agent from Mini Me settings so its learned data, personal files, and attachments are removed together.",
+    );
+    return;
+  }
   let existingJournal = configured ? undefined : readAgentDeletionJournal(agentId);
   if (!configured && (!existingJournal || existingJournal.cleanupCompleted)) {
     failAgentsDelete(

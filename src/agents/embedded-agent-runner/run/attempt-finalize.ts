@@ -349,6 +349,7 @@ export async function completeEmbeddedAttemptAfterTurn(
     }
     const reachedPromptBoundary = transcriptLeafId === null || entry?.id === transcriptLeafId;
     runAgentEndSideEffects({
+      admittedRunContext: attempt.admittedRunContext,
       skillExperienceReviewSource:
         sourceTarget && terminalEntry && reachedPromptBoundary
           ? { ...sourceTarget, entryId: terminalEntry.id }

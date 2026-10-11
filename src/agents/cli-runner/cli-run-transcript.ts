@@ -91,11 +91,12 @@ export async function runCliAgentEndHook(
   params: RunCliAgentParams,
   hookParams: CliAgentEndHookParams,
 ): Promise<void> {
+  const admittedHookParams = { ...hookParams, admittedRunContext: params.admittedRunContext };
   if (!params.messageChannel && !params.messageProvider) {
-    await awaitAgentEndSideEffects(hookParams);
+    await awaitAgentEndSideEffects(admittedHookParams);
     return;
   }
-  runAgentEndSideEffects(hookParams);
+  runAgentEndSideEffects(admittedHookParams);
 }
 
 export async function persistApprovedCliUserTurnTranscript(

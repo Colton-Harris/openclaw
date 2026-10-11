@@ -50,6 +50,7 @@ import { page as lobsterdexPage } from "./pages/lobsterdex/route.ts";
 import { page as logsPage } from "./pages/logs/route.ts";
 import { page as meetingsPage } from "./pages/meetings/route.ts";
 import { page as memoryImportPage } from "./pages/memory-import/route.ts";
+import { page as miniMePage } from "./pages/mini-me/route.ts";
 import { page as modelProvidersPage } from "./pages/model-providers/route.ts";
 import { page as modelSetupPage } from "./pages/model-setup/route.ts";
 import { page as newSessionPage } from "./pages/new-session/route.ts";
@@ -94,6 +95,7 @@ const APP_ROUTE_TREE = [
   appsPage,
   portalsPage,
   agentsHomePage,
+  miniMePage,
   agentsPage,
   approvalsPage,
   channelsPage,

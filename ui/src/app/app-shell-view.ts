@@ -67,6 +67,7 @@ export interface ShellViewHost
   readonly desktopNavigationExpanded: boolean;
   readonly execApprovalElement: OptionalCustomElement;
   readonly onboardingMemoryImportElement: OptionalCustomElement;
+  readonly miniMeWelcomeElement: OptionalCustomElement;
   readonly nativeHistoryState: NativeHistoryState;
   readonly navDrawerOpen: boolean;
   navResizing: boolean;
@@ -175,6 +176,8 @@ export function renderApplicationShell(host: ShellViewHost) {
   const settingsTakeover = isSettingsTakeover(activeRoute) && !host.onboardingMode && !nativeEmbed;
   const runtimeConfig = context.runtimeConfig.state;
   const onboarding = host.onboardingMode;
+  const miniMeNoticeActive = !onboarding && !nativeEmbed && gatewaySnapshot.phase === "connected";
+  host.lazyCustomElements.requestWhileActive(host.miniMeWelcomeElement, miniMeNoticeActive);
   const memoryImportActive = onboarding && activeRoute !== "custodian";
   host.lazyCustomElements.requestWhileActive(
     host.onboardingMemoryImportElement,
@@ -627,6 +630,7 @@ export function renderApplicationShell(host: ShellViewHost) {
             ></openclaw-onboarding-memory-import>`
           : nothing
       }
+      ${miniMeNoticeActive && isOptionalElementDefined(host.miniMeWelcomeElement) ? html`<openclaw-mini-me-welcome .active=${true}></openclaw-mini-me-welcome>` : nothing}
       <openclaw-toast-host></openclaw-toast-host>
     </div>
   `;

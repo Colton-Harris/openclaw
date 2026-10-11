@@ -1961,6 +1961,16 @@ const workerModules = new Set([
   "src/infra/outbound/delivery-queue-media-staging.kernel.ts", // Media retention SQL executes through delivery-queue.worker.
   "src/infra/outbound/delivery-queue-storage.kernel.ts", // Outbound reads use state-read; mutations use delivery storage workers.
 
+  "src/mini-me/persistence.agent-worker.ts", // Runtime entrypoint miniMeContent, loaded by the canonical per-agent SQLite worker broker.
+  "src/mini-me/persistence.content-learning.ts", // Only persistence.agent-worker.ts dispatches learning and undo SQL.
+  "src/mini-me/persistence.content-read.ts", // Content worker dispatch and its content-source transaction own these reads.
+  "src/mini-me/persistence.content-records.ts", // Only persistence.agent-worker.ts dispatches document, prediction, outcome and restore writes.
+  "src/mini-me/persistence.content-sources.ts", // Only persistence.agent-worker.ts dispatches source lifecycle SQL.
+  "src/mini-me/persistence.state-actions.ts", // Only persistence.state-worker.ts dispatches grant reservations and settlement.
+  "src/mini-me/persistence.state-profile.ts", // Shared-state worker dispatcher and its action/root-operation kernels only.
+  "src/mini-me/persistence.state-root-operations.ts", // Only persistence.state-worker.ts dispatches operation receipts.
+  "src/mini-me/persistence.state-worker.ts", // openclaw-state-worker-runtime.ts dispatches every Mini Me shared-state command.
+
   "src/node-host/node-worker-launch-store.kernel.ts", // node-worker-journal.worker.ts and the spawned service-child-group anchor own launch SQL.
   "src/node-host/node-worker-turn-store.kernel.ts", // Turn kernels are instantiated only by node-worker-journal.worker.
 

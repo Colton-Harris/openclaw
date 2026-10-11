@@ -13,6 +13,7 @@ import type {
 } from "./schema/environments.js";
 import type * as HumanMentionsSchema from "./schema/human-mentions.js";
 import type { LogsTailParams } from "./schema/logs-chat.js";
+import type * as MiniMeSchema from "./schema/mini-me.js";
 import type * as PortalSchema from "./schema/portals.js";
 import type { PresenceActivityParams, PresenceQueryParams } from "./schema/presence.js";
 import type * as GitHubSchema from "./schema/session-github-publication.js";
@@ -29,6 +30,26 @@ import type * as UsersSchema from "./schema/users.js";
 
 /** Schema-derived payload ownership for statically validated core Gateway methods. */
 export type GatewayCoreRequestParams = {
+  "miniMe.get": Static<typeof MiniMeSchema.MiniMeGetParamsSchema>;
+  "miniMe.actions": Static<typeof MiniMeSchema.MiniMeActionsParamsSchema>;
+  "miniMe.action.get": Static<typeof MiniMeSchema.MiniMeActionGetParamsSchema>;
+  "miniMe.create": Static<typeof MiniMeSchema.MiniMeCreateParamsSchema>;
+  "miniMe.configure": Static<typeof MiniMeSchema.MiniMeConfigureParamsSchema>;
+  "miniMe.document.set": Static<typeof MiniMeSchema.MiniMeDocumentSetParamsSchema>;
+  "miniMe.source.add": Static<typeof MiniMeSchema.MiniMeSourceAddParamsSchema>;
+  "miniMe.source.remove": Static<typeof MiniMeSchema.MiniMeSourceRemoveParamsSchema>;
+  "miniMe.learn": Static<typeof MiniMeSchema.MiniMeLearnParamsSchema>;
+  "miniMe.undo": Static<typeof MiniMeSchema.MiniMeUndoParamsSchema>;
+  "miniMe.predict": Static<typeof MiniMeSchema.MiniMePredictParamsSchema>;
+  "miniMe.outcome": Static<typeof MiniMeSchema.MiniMeOutcomeParamsSchema>;
+  "miniMe.attach": Static<typeof MiniMeSchema.MiniMeAttachParamsSchema>;
+  "miniMe.detach": Static<typeof MiniMeSchema.MiniMeDetachParamsSchema>;
+  "miniMe.delete": Static<typeof MiniMeSchema.MiniMeDeleteParamsSchema>;
+  "miniMe.export": Static<typeof MiniMeSchema.MiniMeExportParamsSchema>;
+  "miniMe.history": Static<typeof MiniMeSchema.MiniMeHistoryParamsSchema>;
+  "miniMe.sources.available": Static<typeof MiniMeSchema.MiniMeSourcesAvailableParamsSchema>;
+  "miniMe.operation.get": Static<typeof MiniMeSchema.MiniMeOperationGetParamsSchema>;
+
   "backup.status": BackupStatusParams;
   "storage.locations.list": StorageLocationsListParams;
   "storage.locations.probe": StorageLocationsProbeParams;

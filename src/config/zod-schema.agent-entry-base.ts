@@ -101,6 +101,13 @@ export const AgentEntryBaseSchema = z.strictObject({
   model: AgentModelSchema.optional(),
   utilityModel: z.string().optional(),
   decisionModel: DecisionModelSchema.optional(),
+  /** Host-owned personal-agent binding. It never grants approval or tool access. */
+  miniMe: z
+    .strictObject({
+      ownerProfileId: z.string().min(1).max(128),
+      profileId: z.string().min(1).max(128),
+    })
+    .optional(),
   models: AgentModelMapSchema.optional(),
   modelPolicy: AgentModelPolicySchema.optional(),
   thinkingDefault: z.enum(ALL_THINKING_LEVELS).optional(),

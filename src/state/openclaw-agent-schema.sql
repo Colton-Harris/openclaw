@@ -1030,3 +1030,102 @@ CREATE TABLE IF NOT EXISTS session_input_completions (
   FOREIGN KEY (session_key) REFERENCES session_nodes(session_key) ON DELETE CASCADE,
   FOREIGN KEY (session_id) REFERENCES session_windows(session_id) ON DELETE CASCADE
 ) STRICT;
+
+-- Mini Me content is installed only in its dedicated agent store on first use.
+CREATE TABLE IF NOT EXISTS mini_me_content (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL UNIQUE,
+  generation INTEGER NOT NULL CHECK(generation >= 0),
+  revision INTEGER NOT NULL CHECK(revision >= 0),
+  record_count INTEGER NOT NULL CHECK(record_count BETWEEN 0 AND 10000)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_sources (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  cursor TEXT,
+  payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+  PRIMARY KEY(owner_id,mini_me_id,source_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_beliefs (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  belief_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK(origin IN ('direct','correction','inferred','reference','observed-decision')),
+  status TEXT NOT NULL CHECK(status IN ('active','superseded','undone')),
+  created_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+  PRIMARY KEY(owner_id,mini_me_id,belief_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_mini_me_beliefs_scope ON mini_me_beliefs(owner_id,mini_me_id,scope,status,origin);
+CREATE TABLE IF NOT EXISTS mini_me_documents (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  name TEXT NOT NULL CHECK(name IN ('SOUL.md','OPINIONS.md','PREFERENCES.md','MORALS.md','TASTE.md','DECISIONS.md')),
+  revision INTEGER NOT NULL CHECK(revision >= 0),
+  content TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  source_ids_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(source_ids_json)),
+  PRIMARY KEY(owner_id,mini_me_id,name,revision)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_suppressions (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  evidence_key TEXT NOT NULL,
+  PRIMARY KEY(owner_id,mini_me_id,source_id,evidence_key)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_predictions (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  prediction_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+  PRIMARY KEY(owner_id,mini_me_id,prediction_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_outcomes (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  outcome_id TEXT NOT NULL,
+  prediction_id TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK(origin IN ('owner','delegated')),
+  created_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+  PRIMARY KEY(owner_id,mini_me_id,outcome_id),
+  UNIQUE(owner_id,mini_me_id,prediction_id,origin),
+  FOREIGN KEY(owner_id,mini_me_id,prediction_id) REFERENCES mini_me_predictions(owner_id,mini_me_id,prediction_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS mini_me_content_operations (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+  PRIMARY KEY(owner_id,mini_me_id,operation_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS mini_me_learning_keys (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  belief_id TEXT NOT NULL,
+  PRIMARY KEY(owner_id,mini_me_id,evidence_key)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS mini_me_action_restores (
+  owner_id TEXT NOT NULL,
+  mini_me_id TEXT NOT NULL REFERENCES mini_me_content(mini_me_id) ON DELETE CASCADE,
+  receipt_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  target_agent_id TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  before_utf8 TEXT NOT NULL,
+  before_sha256 TEXT NOT NULL,
+  after_sha256 TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(owner_id,mini_me_id,receipt_id),
+  UNIQUE(owner_id,mini_me_id,action_id)
+) STRICT;
+-- END MINI ME FEATURE SCHEMA

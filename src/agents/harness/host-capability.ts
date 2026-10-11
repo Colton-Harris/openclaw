@@ -54,6 +54,7 @@ import type { AgentHarnessHostCapabilities } from "./host-capability-types.js";
 import { captureRequiredWorkspaceToolFloor } from "./host-capability-workspace.js";
 import { normalizeNativeOperationCwd, prepareAgentHarnessEnvironment } from "./host-environment.js";
 import { bindHarnessMedia } from "./host-media.js";
+import { captureHostMiniMeRun } from "./host-mini-me.js";
 import {
   registerAgentHarnessBeforeToolCallRetention,
   registerAgentHarnessScheduledToolProjectionCapability,
@@ -91,6 +92,7 @@ export function createAgentHarnessHostCapabilities(params: {
   runWithScope: <T>(run: () => Promise<T>) => Promise<T>;
 } {
   const attempt = params.attempt;
+  const miniMeRun = captureHostMiniMeRun(attempt);
   // Capture authority by value before any plugin handoff can mutate the attempt.
   const runtimePluginToolGrant = attempt.runtimePluginToolGrant
     ? Object.freeze({
@@ -195,6 +197,16 @@ export function createAgentHarnessHostCapabilities(params: {
   const hostSandboxEnabled = attempt.sandbox?.enabled === true;
   const requiredWorkspace = captureRequiredWorkspaceToolFloor(attempt, params.pluginId, config);
   const capturedWorkspaceOptions = requiredWorkspace?.apply();
+  const miniMe = miniMeRun.bind({
+    capturedWorkspaceDir: capturedWorkspaceOptions?.workspaceDir,
+    config,
+    requesterProfileId,
+    assertActive,
+    bindSignal: () =>
+      attemptSignal
+        ? AbortSignal.any([attemptSignal, capabilityAbortController.signal])
+        : capabilityAbortController.signal,
+  });
   const media = bindHarnessMedia({
     attempt,
     config,
@@ -452,6 +464,8 @@ export function createAgentHarnessHostCapabilities(params: {
     createToolSurface: (options, bindingOptions) => {
       assertActive();
       const effectiveOptions = { ...options, ...requiredWorkspace?.apply(options) };
+      // Latest synchronous surfaces retain a host-bound lazy async consultation.
+      const miniMeBinding = miniMe.prepare();
       // Only host-created core tools can seed TTS provenance. Plugin-bound tools
       // must not replay a retained core result into this attempt's authority set.
       const tools = bindTools(
@@ -463,6 +477,8 @@ export function createAgentHarnessHostCapabilities(params: {
                 // Availability belongs to this prepared host, not mutable plugin inputs.
                 githubPublicationAvailable,
                 runtimePluginToolGrant,
+                // A plugin cannot supply another owner's consultation.
+                miniMeConsultation: miniMeBinding?.consult,
                 skillsSnapshot: options?.skillsSnapshot ?? skillsSnapshot,
                 installedSkills: getInstalledSkills(
                   effectiveOptions.sandbox,
@@ -590,6 +606,7 @@ export function createAgentHarnessHostCapabilities(params: {
       };
     },
   });
+  miniMe.register(capabilities);
   registerAgentHarnessScheduledToolProjectionCapability({
     hostCapabilities: capabilities,
     ownerPluginId: params.pluginId,

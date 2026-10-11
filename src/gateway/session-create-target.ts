@@ -5,6 +5,7 @@ import {
   type ErrorShape,
   errorShape,
 } from "../../packages/gateway-protocol/src/index.js";
+import type { AdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
 import { isEmbeddedAgentRunActive } from "../agents/embedded-agent.js";
 import { isSessionWorkAdmissionActive } from "../sessions/session-lifecycle-admission.js";
 import { authorizeGatewaySessionCreation } from "./operator-role-policy.js";
@@ -19,6 +20,7 @@ export function readSessionCreateTarget(
   target: GatewaySessionStoreTarget,
   expectedSessionId: string | undefined,
   lifecycleIdentities: readonly string[],
+  operatorAuthority?: AdmittedRunOperatorAuthority,
 ): Result<ReturnType<typeof loadGatewaySessionEntryReadOnly>["entry"], ErrorShape> {
   const currentTargetEntry = loadGatewaySessionEntryReadOnly(target.canonicalKey, {
     agentId: target.agentId,
@@ -76,6 +78,7 @@ export function readSessionCreateTarget(
     const creationError = authorizeGatewaySessionCreation({
       cfg: params.cfg,
       agentId: target.agentId,
+      operatorAuthority,
       ...(params.operatorRoleActor
         ? { actor: params.operatorRoleActor }
         : { profileId: params.requestingOperatorProfileId }),
