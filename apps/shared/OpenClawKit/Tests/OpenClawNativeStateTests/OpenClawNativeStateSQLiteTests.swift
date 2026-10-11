@@ -7,6 +7,121 @@ import Darwin.membership
 #endif
 
 struct OpenClawNativeStateSQLiteTests {
+    @Test(arguments: [20, 21])
+    func `supported global schemas preserve native reads and writes`(version: Int) throws {
+        try self.withDatabaseURL { writer, url in
+            try self.createVersionedNativeState(writer, version: version)
+            let original = try Data(contentsOf: url)
+            let reader = try OpenClawNativeStateSQLite(databaseURL: url, createIfMissing: false, readOnly: true)
+
+            #expect(try reader.configMachineStateValue(key: "fixture") == .init(
+                value: "retained-pin",
+                updatedAtMilliseconds: 10))
+            for table in Self.nativeTables {
+                try reader.ensureCanonicalTable(table)
+            }
+            #expect(try reader.scalarText("SELECT token FROM device_auth_tokens") == "retained-token")
+            #expect(try reader.scalarText("SELECT private_key_pem FROM device_identities") == "retained-private-key")
+            #expect(try reader.scalarText("SELECT raw_json FROM exec_approvals_config") == "{\"version\":1}")
+            #expect(try Data(contentsOf: url) == original)
+
+            let reopenedWriter = try OpenClawNativeStateSQLite(databaseURL: url, createIfMissing: false)
+            try reopenedWriter.withImmediateTransaction {
+                for table in Self.nativeTables {
+                    try reopenedWriter.ensureCanonicalTable(table)
+                }
+                try reopenedWriter.execute("""
+                UPDATE device_auth_tokens SET updated_at_ms = 40;
+                UPDATE device_identities SET updated_at_ms = 40;
+                UPDATE exec_approvals_config SET updated_at_ms = 40;
+                INSERT INTO macos_port_guardian_records VALUES (4242, 18789, '/usr/bin/ssh', 'remote', 42.5);
+                """)
+            }
+            #expect(try reopenedWriter.scalarInt64("PRAGMA user_version") == Int64(version))
+            #expect(try reopenedWriter.scalarInt64("SELECT schema_version FROM schema_meta") == Int64(version))
+            #expect(try reopenedWriter.scalarInt64("SELECT updated_at_ms FROM device_auth_tokens") == 40)
+            #expect(try reader.scalarText("SELECT token FROM device_auth_tokens") == "retained-token")
+            #expect(try reader.scalarText("SELECT private_key_pem FROM device_identities") == "retained-private-key")
+            #expect(try reader.scalarText("SELECT raw_json FROM exec_approvals_config") == "{\"version\":1}")
+            #expect(try reader.scalarInt64("SELECT COUNT(*) FROM macos_port_guardian_records WHERE pid = 4242") == 1)
+        }
+    }
+
+    @Test(arguments: [22, 2147483647])
+    func `future global schemas refuse native admission without rewriting state`(version: Int) throws {
+        try self.withDatabaseURL { writer, url in
+            try self.createVersionedNativeState(writer, version: version)
+            let original = try Data(contentsOf: url)
+
+            #expect(throws: OpenClawNativeStateError.self) {
+                try OpenClawNativeStateSQLite(databaseURL: url, createIfMissing: false, readOnly: true)
+            }
+            for table in Self.nativeTables {
+                #expect(throws: OpenClawNativeStateError.self) {
+                    try writer.withImmediateTransaction {
+                        try writer.ensureCanonicalTable(table)
+                    }
+                }
+            }
+            #expect(try Data(contentsOf: url) == original)
+        }
+    }
+
+    @Test(arguments: [
+        "UPDATE schema_meta SET schema_version = 20",
+        "UPDATE schema_meta SET role = 'agent'",
+        "DROP TABLE device_auth_tokens",
+        "ALTER TABLE device_auth_tokens ADD COLUMN unexpected TEXT",
+        "DROP INDEX idx_device_auth_tokens_updated",
+        """
+        DROP TABLE device_auth_tokens;
+        CREATE TABLE device_auth_tokens (
+          device_id TEXT NOT NULL, role TEXT NOT NULL, token TEXT NOT NULL,
+          scopes_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL,
+          PRIMARY KEY (device_id, role)
+        );
+        CREATE INDEX idx_device_auth_tokens_updated
+          ON device_auth_tokens(updated_at_ms DESC, device_id, role);
+        """,
+    ])
+    func `schema twenty one retains canonical native shape and metadata refusals`(_ mutation: String) throws {
+        try self.withDatabaseURL { writer, url in
+            try self.createVersionedNativeState(writer, version: 21)
+            try writer.execute(mutation)
+            let original = try Data(contentsOf: url)
+
+            #expect(throws: OpenClawNativeStateError.self) {
+                let reader = try OpenClawNativeStateSQLite(databaseURL: url, createIfMissing: false, readOnly: true)
+                try reader.ensureCanonicalTable(.deviceAuthTokens)
+            }
+            #expect(throws: OpenClawNativeStateError.self) {
+                try writer.withImmediateTransaction {
+                    try writer.ensureCanonicalTable(.deviceAuthTokens)
+                }
+            }
+            #expect(try Data(contentsOf: url) == original)
+        }
+    }
+
+    private static let nativeTables: [OpenClawNativeStateCanonicalTable] = [
+        .deviceAuthTokens, .deviceIdentities, .execApprovalsConfig, .macosPortGuardianRecords,
+    ]
+
+    private func createVersionedNativeState(_ database: OpenClawNativeStateSQLite, version: Int) throws {
+        for table in Self.nativeTables {
+            try database.ensureCanonicalTable(table)
+        }
+        try self.createConfigMachineState(database)
+        try database.execute("""
+        INSERT INTO config_machine_state VALUES ('fixture', 'retained-pin', 10);
+        INSERT INTO device_auth_tokens VALUES ('device', 'operator', 'retained-token', '["read"]', 30);
+        INSERT INTO device_identities VALUES ('profile', 'device', 'public', 'retained-private-key', 10, 20);
+        INSERT INTO exec_approvals_config VALUES ('current', '{"version":1}', NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 30);
+        PRAGMA user_version = \(version);
+        UPDATE schema_meta SET schema_version = \(version);
+        """)
+    }
+
     @Test(arguments: [
         "PRAGMA user_version = 2147483647; UPDATE schema_meta SET schema_version = 2147483647",
         "UPDATE schema_meta SET schema_version = 2",
