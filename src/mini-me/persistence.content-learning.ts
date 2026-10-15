@@ -113,6 +113,12 @@ export function learnBeliefBatch(
     // SAFETY: The typed content worker writes this source or belief JSON; scope and generation were checked before dispatch.
     source = JSON.parse(selected.payload_json) as MiniMeSource;
   }
+  if (input.sourceStatus && !source) {
+    throw new MiniMePersistenceError("invalid", "A source status requires a selected source");
+  }
+  if (input.sourceStatus?.detail && input.sourceStatus.detail.length > 512) {
+    throw new MiniMePersistenceError("invalid", "Source status detail exceeds its bound");
+  }
   const applied: MiniMeBelief[] = [];
   for (const belief of input.beliefs) {
     const evidenceKey = learningKey(belief);
@@ -225,6 +231,7 @@ export function learnBeliefBatch(
     applied.push(belief);
   }
   if (input.sourceId && source) {
+    const sourceStatus = input.sourceStatus ?? { status: "ready" as const, detail: null };
     executeSqliteQuerySync(
       db,
       k
@@ -234,8 +241,7 @@ export function learnBeliefBatch(
           payload_json: JSON.stringify({
             ...source,
             lastIngestedAt: Date.now(),
-            status: "ready",
-            detail: null,
+            ...sourceStatus,
           }),
         })
         .where("owner_id", "=", scope.ownerId)

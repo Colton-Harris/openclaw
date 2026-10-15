@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Page } from "playwright";
 import { expect, it } from "vitest";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
-import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
+import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { empty, active, presenceUsers, baseResponses } from "../test-helpers/mini-me-fixtures.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
@@ -23,11 +23,8 @@ async function capture(page: Page, name: string, selector: string) {
     proofDirectories.set(page, directory);
   }
   const surface = page.locator(selector);
-  const frame = await takeControlUiScreenshotFrame(page, surface, [surface], {
-    animations: "disabled",
-    elements: [surface],
-  });
-  await writeFile(path.join(directory, `${name}.png`), frame.png);
+  const png = await takeControlUiViewportScreenshot(page, surface, [surface]);
+  await writeFile(path.join(directory, `${name}.png`), png);
 }
 
 suite.define(() => {

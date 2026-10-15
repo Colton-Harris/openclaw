@@ -1,4 +1,16 @@
-import type { SessionObserverHealth } from "../../../packages/gateway-protocol/src/schema/sessions.js";
+import type {
+  SessionGoalStatus,
+  SessionObserverHealth,
+  SessionRunStatus,
+} from "../../../packages/gateway-protocol/src/schema/sessions.js";
+
+type RuntimeSessionRunReceipt = {
+  /** Exact run owning the current terminal Gateway lifecycle projection. */
+  runId: string;
+  status: Exclude<SessionRunStatus, "queued" | "running">;
+};
+
+type RuntimeSessionGoalStatus = SessionGoalStatus | "none";
 
 /** Bounded, current session facts for trusted background plugin classifiers. */
 export type RuntimeSessionFacts = {
@@ -10,8 +22,13 @@ export type RuntimeSessionFacts = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   run: "active" | "idle" | "failed";
+  /** Absent when no current terminal lifecycle projection is available. */
+  runReceipt?: RuntimeSessionRunReceipt;
+  /** Canonical current goal state; `none` means the prepared row has no goal. */
+  goalStatus?: RuntimeSessionGoalStatus;
   observerDigest?: {
     health: SessionObserverHealth;
+    runId?: string;
     headline: string;
     assessment?: string;
     revision: number;

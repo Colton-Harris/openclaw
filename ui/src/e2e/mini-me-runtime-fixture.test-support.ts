@@ -37,6 +37,10 @@ import {
   requestThroughBrowserClient,
   startTrustedIdentityProxy,
 } from "./mini-me-real.test-support.ts";
+import {
+  collectStrings,
+  scriptedMiniMeExtraction,
+} from "./mini-me-scripted-extraction.test-support.ts";
 
 export const SYNTHETIC_OWNER = {
   email: "mini-me-runtime-owner@example.test",
@@ -65,7 +69,6 @@ export const ORIGINAL_BYTES = {
 export function preferenceLine(scope: string, value: string): string {
   return `SYNTHETIC PREFERENCE: ${scope} -> prefer ${value}`;
 }
-const PREFERENCE_LINE = /^SYNTHETIC PREFERENCE: (.+?) -> prefer (\S+)$/gmu;
 const CELL_MARKER = /\[\[cell:([A-Za-z0-9-]+)\]\]/gu;
 
 export function sha256(text: string): string {
@@ -79,39 +82,6 @@ export function workspaceRelativePath(resource: string): string | undefined {
   }
   const tuple: unknown = JSON.parse(resource.slice("workspace:".length));
   return Array.isArray(tuple) && typeof tuple[1] === "string" ? tuple[1] : undefined;
-}
-
-function collectStrings(value: unknown, out: string[] = []): string[] {
-  if (typeof value === "string") {
-    out.push(value);
-  } else if (Array.isArray(value)) {
-    for (const item of value) {
-      collectStrings(item, out);
-    }
-  } else if (isRecord(value)) {
-    for (const item of Object.values(value)) {
-      collectStrings(item, out);
-    }
-  }
-  return out;
-}
-
-function selectedSourceText(input: unknown): string | undefined {
-  for (const text of collectStrings(input)) {
-    const start = text.indexOf('{"selectedSourceText"');
-    if (start < 0) {
-      continue;
-    }
-    try {
-      const parsed: unknown = JSON.parse(text.slice(start));
-      if (isRecord(parsed) && typeof parsed.selectedSourceText === "string") {
-        return parsed.selectedSourceText;
-      }
-    } catch {
-      // Not the isolated-completion prompt; keep looking.
-    }
-  }
-  return undefined;
 }
 
 /** Parse the `mini_me` tool result the Gateway returned to the scripted model. */
@@ -188,6 +158,8 @@ async function startScriptedProviders() {
   const listeners = new Set<() => void>();
   const handlers = new Set<Promise<void>>();
   let holdDecisions = false;
+  let holdExtractionIndex: number | undefined;
+  let heldExtraction: { closed: boolean; sourceText: string; scopes: string[] } | undefined;
   let held: { closed: boolean } | undefined;
   const notify = () => {
     for (const listener of listeners) {
@@ -202,24 +174,28 @@ async function startScriptedProviders() {
         responseId: `resp_${id}`,
       });
     if (body.model === EXTRACTOR_MODEL) {
-      const sourceText = selectedSourceText(body.input);
-      if (sourceText === undefined) {
+      const extraction = scriptedMiniMeExtraction(body.input);
+      if (extraction === undefined) {
         failures.push("extractor request without selectedSourceText");
         response.writeHead(500).end();
         return;
       }
-      const preferences = [...sourceText.matchAll(PREFERENCE_LINE)].map((match) => ({
-        preference: {
-          document: "PREFERENCES.md",
-          scope: match[1]!,
-          statement: match[0],
-          preferred: [match[2]!],
-          avoided: [],
-        },
-        start: match.index,
-        end: match.index + match[0].length,
-      }));
+      const { sourceText, preferences } = extraction;
       extractions.push({ sourceText, scopes: preferences.map((item) => item.preference.scope) });
+      if (extractions.length === holdExtractionIndex) {
+        heldExtraction = {
+          closed: false,
+          sourceText,
+          scopes: preferences.map((item) => item.preference.scope),
+        };
+        const currentHeld = heldExtraction;
+        response.once("close", () => {
+          currentHeld.closed = true;
+          notify();
+        });
+        notify();
+        return;
+      }
       reply(JSON.stringify({ preferences }), `extract_${extractions.length}`);
       return;
     }
@@ -351,6 +327,10 @@ async function startScriptedProviders() {
       holdDecisions = true;
     },
     heldDecision: () => held,
+    holdExtractionAt(index: number) {
+      holdExtractionIndex = index;
+    },
+    heldExtraction: () => heldExtraction,
     /** Event-driven wait: re-evaluated only when the listener records new traffic. */
     until<T>(read: () => T | undefined, signal: AbortSignal): Promise<T> {
       return withinTest(

@@ -1,6 +1,10 @@
 import type { SchemaContract } from "../../gateway-protocol/src/schema-contract.js";
 import type { SessionPerson } from "../../gateway-protocol/src/schema/session-participant.js";
 import type { SessionsListParams } from "../../gateway-protocol/src/schema/sessions-list.js";
+import type {
+  SessionGoalStatus,
+  SessionRunStatus,
+} from "../../gateway-protocol/src/schema/sessions.js";
 import type { WorkboardBoardMetadata } from "./index.js";
 
 const OBSERVER_HEALTH = [
@@ -13,6 +17,22 @@ const OBSERVER_HEALTH = [
   "failed",
 ] as const;
 const RUN_STATES = ["active", "idle", "failed"] as const;
+export const WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES = [
+  "done",
+  "failed",
+  "interrupted",
+  "killed",
+  "timeout",
+] as const satisfies readonly SessionRunStatus[];
+export const WORKBOARD_SESSIONS_GOAL_STATUSES = [
+  "active",
+  "paused",
+  "blocked",
+  "usage_limited",
+  "budget_limited",
+  "complete",
+  "none",
+] as const satisfies readonly (SessionGoalStatus | "none")[];
 const PULL_REQUEST_STATES = ["none", "open", "draft", "merged", "closed"] as const;
 const COLUMN_COLORS = new Set([
   "red",
@@ -26,6 +46,9 @@ const COLUMN_COLORS = new Set([
 ]);
 
 export type WorkboardSessionsObserverHealth = (typeof OBSERVER_HEALTH)[number];
+export type WorkboardSessionsRunReceiptStatus =
+  (typeof WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES)[number];
+export type WorkboardSessionsGoalStatus = (typeof WORKBOARD_SESSIONS_GOAL_STATUSES)[number];
 export type WorkboardSessionsColumnMatch = SchemaContract<ReturnType<typeof normalizeMatch>>;
 export type WorkboardSessionsColumn = SchemaContract<ReturnType<typeof normalizeColumn>>;
 export type WorkboardSessionsBoardSpec = {
@@ -46,8 +69,14 @@ export type WorkboardSessionFacts = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   run: "active" | "idle" | "failed";
+  runReceipt?: {
+    runId: string;
+    status: WorkboardSessionsRunReceiptStatus;
+  };
+  goalStatus?: WorkboardSessionsGoalStatus;
   observerDigest?: {
     health: WorkboardSessionsObserverHealth;
+    runId?: string;
     headline: string;
     assessment?: string;
     revision: number;
@@ -173,12 +202,37 @@ function choices<T extends string>(value: unknown, name: string, allowed: readon
 }
 
 function normalizeMatch(value: unknown) {
-  const input = record(value, "column match", ["health", "run", "pullRequest", "archived"]);
+  const input = record(value, "column match", [
+    "health",
+    "run",
+    "runReceiptStatus",
+    "goalStatus",
+    "pullRequest",
+    "archived",
+  ]);
   return {
     ...(input.health !== undefined
       ? { health: choices(input.health, "match.health", OBSERVER_HEALTH) }
       : {}),
     ...(input.run !== undefined ? { run: choices(input.run, "match.run", RUN_STATES) } : {}),
+    ...(input.runReceiptStatus !== undefined
+      ? {
+          runReceiptStatus: choices(
+            input.runReceiptStatus,
+            "match.runReceiptStatus",
+            WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES,
+          ),
+        }
+      : {}),
+    ...(input.goalStatus !== undefined
+      ? {
+          goalStatus: choices(
+            input.goalStatus,
+            "match.goalStatus",
+            WORKBOARD_SESSIONS_GOAL_STATUSES,
+          ),
+        }
+      : {}),
     ...(input.pullRequest !== undefined
       ? { pullRequest: choices(input.pullRequest, "match.pullRequest", PULL_REQUEST_STATES) }
       : {}),

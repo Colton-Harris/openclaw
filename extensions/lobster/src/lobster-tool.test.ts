@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import type {
   OpenClawPluginApi,
   OpenClawPluginToolContext,
@@ -51,6 +52,159 @@ function resumeToken(details: unknown, field = "requiresInput") {
 }
 
 describe("lobster plugin tool", () => {
+  it("forwards caller cancellation and waits for embedded process cleanup", async () => {
+    const dir = tempDirs.make("openclaw-lobster-caller-abort-");
+    vi.stubEnv("LOBSTER_STATE_DIR", dir);
+    const script = path.join(dir, "slow-effect.mjs");
+    const workflow = path.join(dir, "slow-effect.lobster");
+    const started = path.join(dir, "started");
+    const effect = path.join(dir, "effect");
+    await fs.writeFile(
+      script,
+      [
+        "import fs from 'node:fs';",
+        "process.on('SIGTERM', () => {});",
+        "fs.writeFileSync(process.argv[2], 'started');",
+        "setTimeout(() => fs.writeFileSync(process.argv[3], 'synthetic effect'), 900);",
+        "setTimeout(() => process.exit(0), 1500);",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      workflow,
+      JSON.stringify({
+        steps: [
+          {
+            id: "synthetic-effect",
+            run: [process.execPath, script, started, effect]
+              .map((part) => JSON.stringify(part))
+              .join(" "),
+          },
+        ],
+      }),
+    );
+
+    const tool = createLobsterTool(fakeApi());
+    const controller = new AbortController();
+    const pending = tool.execute(
+      "abort-running-workflow",
+      { action: "run", pipeline: workflow, timeoutMs: 5_000 },
+      controller.signal,
+    );
+    const startedDeadline = Date.now() + 5_000;
+    while (Date.now() < startedDeadline) {
+      try {
+        await fs.access(started);
+        break;
+      } catch {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        });
+      }
+    }
+    await fs.access(started);
+    const abortAt = performance.now();
+    const reason = new Error("private synthetic caller detail");
+    controller.abort(reason);
+    await expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+      message:
+        "lobster execution cancelled after dispatch; effects may already exist. Inspect the original target before retrying.",
+      cause: reason,
+    });
+    const cleanupMs = performance.now() - abortAt;
+    expect(cleanupMs).toBeGreaterThanOrEqual(200);
+    expect(cleanupMs).toBeLessThan(2_000);
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 1_000);
+    });
+    await expect(fs.access(effect)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves durable approval preview and identity through resume", async () => {
+    const dir = tempDirs.make("openclaw-lobster-approval-preview-");
+    vi.stubEnv("LOBSTER_STATE_DIR", dir);
+    const workflow = path.join(dir, "approval.lobster");
+    const prepareScript = path.join(dir, "prepare.mjs");
+    const publishScript = path.join(dir, "publish.mjs");
+    const prepared = path.join(dir, "prepared");
+    const published = path.join(dir, "published");
+    await fs.writeFile(
+      prepareScript,
+      "import fs from 'node:fs'; fs.appendFileSync(process.argv[2], 'prepared');",
+    );
+    await fs.writeFile(
+      publishScript,
+      "import fs from 'node:fs'; fs.appendFileSync(process.argv[2], 'published');",
+    );
+    await fs.writeFile(
+      workflow,
+      JSON.stringify({
+        steps: [
+          {
+            id: "prepare",
+            run: [process.execPath, prepareScript, prepared]
+              .map((part) => JSON.stringify(part))
+              .join(" "),
+          },
+          {
+            id: "approval",
+            approval: {
+              prompt: "Approve synthetic publication?",
+              items: [{ target: "local-fixture" }],
+              preview: "publish local-fixture",
+              initiatedBy: "synthetic-requester",
+              requiredApprover: "synthetic-reviewer",
+              requireDifferentApprover: true,
+            },
+          },
+          {
+            id: "publish",
+            run: [process.execPath, publishScript, published]
+              .map((part) => JSON.stringify(part))
+              .join(" "),
+          },
+        ],
+      }),
+    );
+
+    const tool = createLobsterTool(fakeApi());
+    const pending = await tool.execute("request-approval", { action: "run", pipeline: workflow });
+    expect(await fs.readFile(prepared, "utf8")).toBe("prepared");
+    await expect(fs.access(published)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(pending.details).toMatchObject({
+      status: "needs_approval",
+      requiresApproval: {
+        type: "approval_request",
+        prompt: "Approve synthetic publication?",
+        items: [{ target: "local-fixture" }],
+        preview: "publish local-fixture",
+        initiatedBy: "synthetic-requester",
+        requiredApprover: "synthetic-reviewer",
+        requireDifferentApprover: true,
+      },
+    });
+
+    vi.stubEnv("LOBSTER_APPROVAL_APPROVED_BY", "synthetic-reviewer");
+    const approvalToken = resumeToken(pending.details, "requiresApproval");
+    const approved = await createLobsterTool(fakeApi()).execute("resume-approval", {
+      action: "resume",
+      token: approvalToken,
+      approve: true,
+    });
+    expect(approved.details).toMatchObject({ status: "ok" });
+    expect(await fs.readFile(prepared, "utf8")).toBe("prepared");
+    expect(await fs.readFile(published, "utf8")).toBe("published");
+    await expect(
+      createLobsterTool(fakeApi()).execute("replay-approval", {
+        action: "resume",
+        token: approvalToken,
+        approve: true,
+      }),
+    ).rejects.toThrow(/not found/i);
+    expect(await fs.readFile(published, "utf8")).toBe("published");
+  });
+
   it("resumes real pipeline input, preserves invalid answers, and still handles approvals", async () => {
     vi.stubEnv("LOBSTER_STATE_DIR", tempDirs.make("openclaw-lobster-input-"));
     const tool = createLobsterTool(fakeApi());

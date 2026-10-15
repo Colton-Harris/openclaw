@@ -390,6 +390,8 @@ export {
   createDefaultWorkboardSessionsBoardSpec,
   normalizeWorkboardSessionsBoardSpec,
   patchWorkboardSessionsBoardSpec,
+  WORKBOARD_SESSIONS_GOAL_STATUSES,
+  WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES,
 } from "./sessions-board.js";
 export type {
   WorkboardSessionFacts,
@@ -400,5 +402,7 @@ export type {
   WorkboardSessionsBoardView,
   WorkboardSessionsColumn,
   WorkboardSessionsColumnMatch,
+  WorkboardSessionsGoalStatus,
   WorkboardSessionsObserverHealth,
+  WorkboardSessionsRunReceiptStatus,
 } from "./sessions-board.js";

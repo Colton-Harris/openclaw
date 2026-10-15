@@ -1,8 +1,10 @@
+import { WORKBOARD_SESSIONS_GOAL_STATUSES } from "@openclaw/workboard-contract";
 import type {
   WorkboardSessionFacts,
   WorkboardSessionsBoard,
   WorkboardSessionsBoardRead,
   WorkboardSessionsBoardView,
+  WorkboardSessionsColumn,
 } from "@openclaw/workboard-contract";
 import { resolveGlobalSingleton } from "openclaw/plugin-sdk/global-singleton";
 import { redactToolPayloadText } from "openclaw/plugin-sdk/logging-core";
@@ -47,7 +49,136 @@ export type WorkboardSessionsBoardService = OpenClawPluginService &
   Operations & { stop: () => Promise<void> };
 type Owner = Operations & { cancel: () => void; stop: () => Promise<void> };
 type CachedFacts = { sessionId: string; facts?: WorkboardSessionFacts; dirty: boolean };
+type RosterSession = {
+  facts: WorkboardSessionFacts;
+  status?: string;
+  lastRunId?: string;
+  lifecycleRevision?: string;
+  hasActiveRun?: boolean;
+  activeRunIds?: string[];
+};
 const FACTS_BATCH_SIZE = 40;
+
+function rosterRunIsActive(row: RosterSession): boolean {
+  return (
+    row.hasActiveRun === true ||
+    row.status === "queued" ||
+    row.status === "running" ||
+    (row.activeRunIds?.length ?? 0) > 0
+  );
+}
+
+function hasCurrentRunReceipt(
+  facts: WorkboardSessionFacts | undefined,
+  cached: CachedFacts | undefined,
+  row: RosterSession,
+): boolean {
+  const receipt = facts?.runReceipt;
+  return (
+    cached?.dirty === false &&
+    !rosterRunIsActive(row) &&
+    row.status !== undefined &&
+    row.status !== "queued" &&
+    row.status !== "running" &&
+    row.lastRunId !== undefined &&
+    receipt?.runId === row.lastRunId &&
+    receipt.status === row.status &&
+    (row.lifecycleRevision === undefined || facts?.lifecycleRevision === row.lifecycleRevision)
+  );
+}
+
+function hasCurrentObserverDigest(
+  facts: WorkboardSessionFacts | undefined,
+  cached: CachedFacts | undefined,
+  row: RosterSession,
+  requireCurrentRun: boolean,
+): boolean {
+  const digest = facts?.observerDigest;
+  if (
+    cached?.dirty !== false ||
+    !digest ||
+    (row.lifecycleRevision !== undefined && facts?.lifecycleRevision !== row.lifecycleRevision)
+  ) {
+    return false;
+  }
+  if (digest.runId === undefined) {
+    return !requireCurrentRun;
+  }
+  if (!digest.runId) {
+    return false;
+  }
+  if (
+    requireCurrentRun &&
+    row.status === undefined &&
+    row.hasActiveRun === undefined &&
+    row.activeRunIds === undefined
+  ) {
+    return false;
+  }
+  if (rosterRunIsActive(row)) {
+    return row.activeRunIds?.includes(digest.runId) === true;
+  }
+  return row.lastRunId !== undefined && digest.runId === row.lastRunId;
+}
+
+function currentFacts(
+  row: RosterSession,
+  cached: CachedFacts | undefined,
+  requireCurrentObserverRun: boolean,
+): WorkboardSessionFacts {
+  const known = cached?.sessionId === row.facts.sessionId ? cached.facts : undefined;
+  const facts = known ? { ...row.facts, ...known } : row.facts;
+  const baseFacts = { ...facts };
+  delete baseFacts.goalStatus;
+  delete baseFacts.runReceipt;
+  delete baseFacts.observerDigest;
+  const runReceipt = hasCurrentRunReceipt(known, cached, row) ? known?.runReceipt : undefined;
+  const observerDigest = hasCurrentObserverDigest(known, cached, row, requireCurrentObserverRun)
+    ? known?.observerDigest
+    : undefined;
+  return {
+    ...baseFacts,
+    key: row.facts.key,
+    sessionId: row.facts.sessionId,
+    agentId: row.facts.agentId,
+    archived: row.facts.archived,
+    lastActivityAt: row.facts.lastActivityAt,
+    run:
+      row.status !== undefined || row.hasActiveRun !== undefined || row.activeRunIds !== undefined
+        ? row.facts.run
+        : (known?.run ?? row.facts.run),
+    // The session list is the current source for goal state; missing or malformed is unknown.
+    ...(row.facts.goalStatus !== undefined ? { goalStatus: row.facts.goalStatus } : {}),
+    ...(runReceipt ? { runReceipt } : {}),
+    ...(observerDigest ? { observerDigest } : {}),
+  };
+}
+
+function canonicalLifecycleRules(column: WorkboardSessionsColumn) {
+  if (column.match === undefined) {
+    return [];
+  }
+  const alternatives = Array.isArray(column.match) ? column.match : [column.match];
+  return alternatives.filter(
+    (rule) => rule.runReceiptStatus !== undefined || rule.goalStatus !== undefined,
+  );
+}
+
+function columnUsesCanonicalLifecycleMatches(column: WorkboardSessionsColumn): boolean {
+  return canonicalLifecycleRules(column).length > 0;
+}
+
+function sessionMatchesCanonicalLifecycleColumn(
+  facts: WorkboardSessionFacts,
+  column: WorkboardSessionsColumn,
+): boolean {
+  const rules = canonicalLifecycleRules(column);
+  return rules.length > 0 && sessionMatchesColumn(facts, { ...column, match: rules });
+}
+
+function hasCanonicalLifecycleMatches(board: WorkboardSessionsBoard): boolean {
+  return board.sessions.columns.some(columnUsesCanonicalLifecycleMatches);
+}
 
 function activeState() {
   return resolveGlobalSingleton<{ owner?: Owner }>(
@@ -66,7 +197,7 @@ async function listSessions(
   board: WorkboardSessionsBoard,
   view?: WorkboardSessionsBoardView,
 ) {
-  const sessions = new Map<string, WorkboardSessionFacts>();
+  const sessions = new Map<string, RosterSession>();
   let people: WorkboardSessionsBoardRead["people"];
   let offset = 0;
   for (;;) {
@@ -108,22 +239,64 @@ async function listSessions(
         session.incognito !== true &&
         !isIncognitoSessionKey(session.key)
       ) {
+        const status = typeof session.status === "string" ? session.status : undefined;
+        const activeRunIds = Array.isArray(session.activeRunIds)
+          ? session.activeRunIds.filter((runId): runId is string => typeof runId === "string")
+          : undefined;
+        const active =
+          session.hasActiveRun === true ||
+          status === "queued" ||
+          status === "running" ||
+          (activeRunIds?.length ?? 0) > 0;
+        const observedGoalStatus =
+          isRecord(session.goal) && typeof session.goal.status === "string"
+            ? session.goal.status
+            : undefined;
+        const goalStatus =
+          session.goal === undefined
+            ? "none"
+            : observedGoalStatus === undefined
+              ? undefined
+              : WORKBOARD_SESSIONS_GOAL_STATUSES.find(
+                  (candidate) => candidate === observedGoalStatus,
+                );
         sessions.set(session.key, {
-          key: session.key,
-          sessionId: session.sessionId,
-          agentId: resolveAgentIdFromSessionKey(session.key),
-          label: typeof session.label === "string" ? session.label : undefined,
-          derivedTitle: typeof session.derivedTitle === "string" ? session.derivedTitle : undefined,
-          run: "idle",
-          pullRequests: [],
-          pullRequestsUnavailable: true,
-          archived: session.archived === true,
-          lastActivityAt:
-            typeof session.lastActivityAt === "number"
-              ? session.lastActivityAt
-              : typeof session.updatedAt === "number"
-                ? session.updatedAt
-                : Date.now(),
+          facts: {
+            key: session.key,
+            sessionId: session.sessionId,
+            agentId: resolveAgentIdFromSessionKey(session.key),
+            label: typeof session.label === "string" ? session.label : undefined,
+            derivedTitle:
+              typeof session.derivedTitle === "string" ? session.derivedTitle : undefined,
+            run: active
+              ? "active"
+              : status === "failed" ||
+                  status === "killed" ||
+                  status === "timeout" ||
+                  typeof session.lastRunError === "string"
+                ? "failed"
+                : "idle",
+            ...(goalStatus !== undefined ? { goalStatus } : {}),
+            pullRequests: [],
+            archived: session.archived === true,
+            lastActivityAt:
+              typeof session.lastActivityAt === "number"
+                ? session.lastActivityAt
+                : typeof session.updatedAt === "number"
+                  ? session.updatedAt
+                  : Date.now(),
+          },
+          ...(status !== undefined ? { status } : {}),
+          ...(typeof session.lastRunId === "string" ? { lastRunId: session.lastRunId } : {}),
+          ...(typeof session.lifecycleRevision === "string"
+            ? { lifecycleRevision: session.lifecycleRevision }
+            : {}),
+          ...(typeof session.hasActiveRun === "boolean"
+            ? { hasActiveRun: session.hasActiveRun }
+            : status === "queued" || status === "running" || (activeRunIds?.length ?? 0) > 0
+              ? { hasActiveRun: true }
+              : {}),
+          ...(activeRunIds !== undefined ? { activeRunIds } : {}),
         });
       }
     }
@@ -212,42 +385,42 @@ function createOwner(
       assertReadCurrent();
     }
     const missing = [...roster.values()].filter((row) => {
-      const cached = cache.get(row.key);
+      const cached = cache.get(row.facts.key);
       return (
-        row.key !== board.sessions.agentSessionKey &&
-        (!cached || cached.sessionId !== row.sessionId || cached.dirty)
+        row.facts.key !== board.sessions.agentSessionKey &&
+        (!cached || cached.sessionId !== row.facts.sessionId || cached.dirty)
       );
     });
     const refresh = async () => {
       for (let offset = 0; offset < missing.length; offset += FACTS_BATCH_SIZE) {
         const batch = missing.slice(offset, offset + FACTS_BATCH_SIZE);
         for (const row of batch) {
-          if (cache.get(row.key)?.sessionId !== row.sessionId) {
-            cache.set(row.key, { sessionId: row.sessionId, dirty: true });
+          if (cache.get(row.facts.key)?.sessionId !== row.facts.sessionId) {
+            cache.set(row.facts.key, { sessionId: row.facts.sessionId, dirty: true });
           }
         }
-        const before = new Map(batch.map((row) => [row.key, cache.get(row.key)]));
+        const before = new Map(batch.map((row) => [row.facts.key, cache.get(row.facts.key)]));
         try {
           const result = await params.gateway.readSessionFacts({
-            sessionKeys: batch.map((row) => row.key),
+            sessionKeys: batch.map((row) => row.facts.key),
           });
           assertReadCurrent();
           const returned = new Map(result.sessions.map((facts) => [facts.key, facts]));
           for (const row of batch) {
-            const facts = returned.get(row.key);
-            if (!facts || facts.sessionId !== row.sessionId) {
-              omitted.add(row.key);
-              if (cache.get(row.key) === before.get(row.key)) {
-                cache.delete(row.key);
+            const facts = returned.get(row.facts.key);
+            if (!facts || facts.sessionId !== row.facts.sessionId) {
+              omitted.add(row.facts.key);
+              if (cache.get(row.facts.key) === before.get(row.facts.key)) {
+                cache.delete(row.facts.key);
               }
-            } else if (cache.get(row.key) === before.get(row.key)) {
-              cache.set(row.key, { sessionId: facts.sessionId, facts, dirty: false });
+            } else if (cache.get(row.facts.key) === before.get(row.facts.key)) {
+              cache.set(row.facts.key, { sessionId: facts.sessionId, facts, dirty: false });
             }
           }
         } catch (error) {
           assertReadCurrent();
           for (const row of batch) {
-            unavailable.add(row.key);
+            unavailable.add(row.facts.key);
           }
           reasons.add(redactToolPayloadText(String(error)).replace(/\s+/g, " ").slice(0, 300));
         }
@@ -269,24 +442,29 @@ function createOwner(
     );
     assertReadCurrent();
     const fallback = sessionsBoardFallback(board);
+    const requireCurrentObserverRun = hasCanonicalLifecycleMatches(board);
     const sessions: WorkboardSessionsBoardRead["sessions"] = [];
     for (const row of roster.values()) {
-      if (omitted.has(row.key)) {
+      if (omitted.has(row.facts.key)) {
         continue;
       }
-      const cached = cache.get(row.key);
-      const known = cached?.sessionId === row.sessionId ? cached.facts : undefined;
-      const facts = known ?? row;
+      const cached = cache.get(row.facts.key);
+      const known = cached?.sessionId === row.facts.sessionId ? cached.facts : undefined;
+      const facts = currentFacts(row, cached, requireCurrentObserverRun);
       if (!inScope(facts, board, now())) {
         continue;
       }
-      const pin = placements.get(row.key);
+      const pin = placements.get(row.facts.key);
+      const pinColumn = board.sessions.columns.find((column) => column.id === pin?.columnId);
       const pinned =
         pin?.source === "operator" &&
-        board.sessions.columns.some((column) => column.id === pin.columnId);
-      const match = known
-        ? board.sessions.columns.find((column) => sessionMatchesColumn(facts, column))
-        : undefined;
+        pinColumn !== undefined &&
+        (!columnUsesCanonicalLifecycleMatches(pinColumn) ||
+          sessionMatchesCanonicalLifecycleColumn(facts, pinColumn));
+      const factsForMatching = known ? facts : { ...facts, pullRequestsUnavailable: true };
+      const match = board.sessions.columns.find((column) =>
+        sessionMatchesColumn(factsForMatching, column),
+      );
       sessions.push({
         ...facts,
         columnId: pinned ? pin.columnId : (match ?? fallback).id,
@@ -302,7 +480,7 @@ function createOwner(
     }
     const warnings: string[] = [];
     if (unavailable.size) {
-      const warning = `Session facts are unavailable for ${unavailable.size} sessions: ${[...reasons].join("; ")}. Showing the last known placement.`;
+      const warning = `Session facts are unavailable for ${unavailable.size} sessions: ${[...reasons].join("; ")}. Showing last-known details; current lifecycle and goal labels use the session list, and stale terminal receipts or observer health are suppressed.`;
       warnings.push(warning);
       if (!factsFailureLogged) {
         context.logger.warn(warning);
@@ -365,22 +543,35 @@ function createOwner(
       const assertWriteCurrent = interactiveAuthority(caller);
       assertWriteCurrent();
       const board = await params.store.getSessionsBoard(id);
-      if (!board.sessions.columns.some((column) => column.id === columnId)) {
+      const targetColumn = board.sessions.columns.find((column) => column.id === columnId);
+      if (!targetColumn) {
         throw new Error("Unknown Sessions board column.");
       }
       const { sessions: visible } = await listSessions(params.gateway, board);
-      if (!visible.has(sessionKey)) {
+      const rosterRow = visible.get(sessionKey);
+      if (!rosterRow) {
         throw new Error("Session is not available in this board's scope.");
       }
       const result = await params.gateway.readSessionFacts({ sessionKeys: [sessionKey] });
       const facts = result.sessions.find(
         (entry) =>
           entry.key === sessionKey &&
-          entry.sessionId === visible.get(sessionKey)?.sessionId &&
+          entry.sessionId === rosterRow.facts.sessionId &&
           inScope(entry, board, now()),
       );
       if (!facts) {
         throw new Error("Session is not available in this board's scope.");
+      }
+      const projectedFacts = currentFacts(
+        rosterRow,
+        { sessionId: facts.sessionId, facts, dirty: false },
+        hasCanonicalLifecycleMatches(board),
+      );
+      if (
+        columnUsesCanonicalLifecycleMatches(targetColumn) &&
+        !sessionMatchesCanonicalLifecycleColumn(projectedFacts, targetColumn)
+      ) {
+        throw new Error("Session's current lifecycle facts do not match this board column.");
       }
       const previous = (await params.store.listSessionPlacements(id)).find(
         (entry) => entry.sessionKey === sessionKey,

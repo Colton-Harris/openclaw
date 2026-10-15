@@ -18,6 +18,12 @@ export function sessionMatchesColumn(
         (facts.observerDigest !== undefined &&
           match.health.includes(facts.observerDigest.health))) &&
       (match.run === undefined || match.run.includes(facts.run)) &&
+      (match.runReceiptStatus === undefined ||
+        (facts.run !== "active" &&
+          facts.runReceipt !== undefined &&
+          match.runReceiptStatus.includes(facts.runReceipt.status))) &&
+      (match.goalStatus === undefined ||
+        (facts.goalStatus !== undefined && match.goalStatus.includes(facts.goalStatus))) &&
       (match.archived === undefined || match.archived === facts.archived) &&
       (match.pullRequest === undefined ||
         (!facts.pullRequestsUnavailable &&

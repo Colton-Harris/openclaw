@@ -241,6 +241,10 @@ async function captureAutomationsScreenshots(params: {
     // and a fixed client identity, so no interactive connection prompt appears.
     await page.addInitScript(
       (auth) => {
+        localStorage.setItem(
+          "openclaw:control-ui:community-invite:v2",
+          JSON.stringify({ dismissedAtMs: 1770000000000 }),
+        );
         (window as Window & { ["__OPENCLAW_NATIVE_CONTROL_AUTH__"]?: unknown })[
           "__OPENCLAW_NATIVE_CONTROL_AUTH__"
         ] = auth;
@@ -276,6 +280,9 @@ async function captureAutomationsScreenshots(params: {
     if (await exitSetup.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await exitSetup.click();
     }
+    const welcome = page.locator(".mini-me-welcome");
+    await welcome.getByRole("button", { name: "Maybe later", exact: true }).click();
+    await welcome.waitFor({ state: "detached" });
     await page
       .getByText(params.jobName)
       .first()
@@ -288,14 +295,10 @@ async function captureAutomationsScreenshots(params: {
     const historyText = page.getByText(/^Run history$/i).first();
     const history = (await historyTab.isVisible().catch(() => false)) ? historyTab : historyText;
     if (await history.isVisible().catch(() => false)) {
-      await history.click().catch(() => undefined);
+      await history.click();
       await sleep(3_000);
       // Run entries render status and summary inline (.cron-run-entry).
-      await page
-        .locator(".cron-run-entry")
-        .first()
-        .waitFor({ timeout: 30_000 })
-        .catch(() => undefined);
+      await page.locator(".cron-run-entry").first().waitFor({ timeout: 30_000 });
       await sleep(1_000);
       await capture("automations-run-history");
     }

@@ -282,6 +282,50 @@ describe("Mini Me typed persistence boundaries", () => {
     content("initialize", { scope: { ...scope, generation: 1 }, operationId: "generation1" });
     expect(() => content("readSnapshot", { scope })).toThrow("generation changed");
   });
+  it("commits a non-final conversation page cursor and pending status together", () => {
+    initialize();
+    const ongoing: MiniMeSource = {
+      id: "ongoing",
+      selection: {
+        kind: "conversation",
+        sessionKey: "agent:main:synthetic-owner-source",
+        mode: "ongoing",
+      },
+      revision: 0,
+      status: "pending",
+      lastIngestedAt: null,
+      detail: null,
+    };
+    content("addSource", { scope, operationId: "ongoing-source", source: ongoing });
+    const page = {
+      scope,
+      operationId: "ongoing-page-1",
+      beliefs: [],
+      sourceId: ongoing.id,
+      expectedCursor: null,
+      cursor: "page-1",
+      sourceStatus: {
+        status: "pending",
+        detail:
+          "Mini Me is still learning from this conversation; it continues from where it stopped.",
+      },
+    } satisfies MiniMeContentWorkerOperations["learnBatch"]["input"];
+    const learnPage = () => content("learnBatch", page);
+
+    fixture.reject = "commit";
+    expect(learnPage).toThrow("revoked");
+    fixture.reject = undefined;
+    expect(content("sourceCursor", { scope, sourceId: ongoing.id })).toBeNull();
+    expect(
+      content("readSnapshot", { scope }).sources.find((item) => item.id === ongoing.id),
+    ).toMatchObject({ status: "pending", detail: null });
+
+    learnPage();
+    expect(content("sourceCursor", { scope, sourceId: ongoing.id })).toBe("page-1");
+    expect(
+      content("readSnapshot", { scope }).sources.find((item) => item.id === ongoing.id),
+    ).toMatchObject({ status: "pending", detail: page.sourceStatus.detail });
+  });
   it("retains correction priority and suppresses undo evidence during later replay", () => {
     initialize();
     content("learnBatch", { scope, operationId: "learn", beliefs: [belief()] });

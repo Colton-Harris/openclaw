@@ -26,6 +26,10 @@ type LobsterEnvelope =
         type: "approval_request";
         prompt: string;
         items: unknown[];
+        preview?: string;
+        initiatedBy?: string;
+        requiredApprover?: string;
+        requireDifferentApprover?: boolean;
         resumeToken?: string;
         approvalId?: string;
       };
@@ -45,6 +49,7 @@ export type LobsterRunnerParams = {
   approve?: boolean;
   responseJson?: string;
   cancel?: boolean;
+  signal?: AbortSignal;
   cwd: string;
   timeoutMs: number;
   maxStdoutBytes: number;
@@ -71,6 +76,10 @@ type EmbeddedToolEnvelope = {
   requiresApproval?: {
     prompt: string;
     items: unknown[];
+    preview?: string;
+    initiatedBy?: string;
+    requiredApprover?: string;
+    requireDifferentApprover?: boolean;
     resumeToken?: string;
     approvalId?: string;
   } | null;
@@ -98,6 +107,21 @@ type EmbeddedToolRuntime = {
 };
 
 const workflowExts = new Set([".lobster", ".yaml", ".yml", ".json"]);
+
+function callerAbortError(signal: AbortSignal, dispatched = false): Error {
+  const message = dispatched
+    ? "lobster execution cancelled after dispatch; effects may already exist. Inspect the original target before retrying."
+    : "lobster execution cancelled before dispatch.";
+  const error = new Error(message, { cause: signal.reason });
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfCallerAborted(signal: AbortSignal | undefined, dispatched = false): void {
+  if (signal?.aborted) {
+    throw callerAbortError(signal, dispatched);
+  }
+}
 
 export function resolveLobsterCwd(cwdRaw: unknown): string {
   if (typeof cwdRaw !== "string" || !cwdRaw.trim()) {
@@ -149,6 +173,18 @@ function normalizeEnvelope(
           type: "approval_request",
           prompt: envelope.requiresApproval.prompt,
           items: envelope.requiresApproval.items,
+          ...(typeof envelope.requiresApproval.preview === "string"
+            ? { preview: envelope.requiresApproval.preview }
+            : {}),
+          ...(typeof envelope.requiresApproval.initiatedBy === "string"
+            ? { initiatedBy: envelope.requiresApproval.initiatedBy }
+            : {}),
+          ...(typeof envelope.requiresApproval.requiredApprover === "string"
+            ? { requiredApprover: envelope.requiresApproval.requiredApprover }
+            : {}),
+          ...(typeof envelope.requiresApproval.requireDifferentApprover === "boolean"
+            ? { requireDifferentApprover: envelope.requiresApproval.requireDifferentApprover }
+            : {}),
           ...(envelope.requiresApproval.resumeToken
             ? { resumeToken: envelope.requiresApproval.resumeToken }
             : {}),
@@ -201,9 +237,15 @@ export function createEmbeddedLobsterRunner(options?: {
   let runtimePromise: Promise<EmbeddedToolRuntime> | undefined;
   return {
     async run(params) {
+      throwIfCallerAborted(params.signal);
       runtimePromise ??= loadRuntime();
       const runtime = await runtimePromise;
+      throwIfCallerAborted(params.signal);
       const controller = new AbortController();
+      const signal = params.signal
+        ? AbortSignal.any([params.signal, controller.signal])
+        : controller.signal;
+      let dispatched = false;
       return await raceWithTimeout(
         async () => {
           const maxStdoutBytes = Math.max(1024, params.maxStdoutBytes);
@@ -214,7 +256,7 @@ export function createEmbeddedLobsterRunner(options?: {
             stdin: Readable.from([]),
             stdout: createLimitedSink(maxStdoutBytes, "stdout"),
             stderr: createLimitedSink(maxStdoutBytes, "stderr"),
-            signal: controller.signal,
+            signal,
           };
           let envelope: EmbeddedToolEnvelope;
 
@@ -235,8 +277,12 @@ export function createEmbeddedLobsterRunner(options?: {
                   throw new Error("run --args-json must be valid JSON");
                 }
               }
+              throwIfCallerAborted(params.signal, dispatched);
+              dispatched = true;
               envelope = await runtime.runToolRequest({ filePath, args, ctx });
             } else {
+              throwIfCallerAborted(params.signal, dispatched);
+              dispatched = true;
               envelope = await runtime.runToolRequest({ pipeline, ctx });
             }
           } else {
@@ -264,6 +310,8 @@ export function createEmbeddedLobsterRunner(options?: {
                 throw new Error("responseJson must be valid JSON");
               }
             }
+            throwIfCallerAborted(params.signal, dispatched);
+            dispatched = true;
             envelope = await runtime.resumeToolRequest({
               ...(token ? { token } : {}),
               ...(approvalId ? { approvalId } : {}),
@@ -282,6 +330,12 @@ export function createEmbeddedLobsterRunner(options?: {
           throw error;
         },
       ).catch((error: unknown) => {
+        if (params.signal?.aborted && !controller.signal.aborted) {
+          throw toLintErrorObject(
+            callerAbortError(params.signal, dispatched),
+            "Non-Error rejection",
+          );
+        }
         throw toLintErrorObject(error, "Non-Error rejection");
       });
     },

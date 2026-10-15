@@ -193,7 +193,16 @@ describe("createEmbeddedLobsterRunner", () => {
 
   it("passes approvalId through the normalized needs_approval envelope", async () => {
     const { runtime, runner } = createRunner();
-    const approval = { prompt: "ok?", items: [], resumeToken: "eyJ...", approvalId: "dbc98d05" };
+    const approval = {
+      prompt: "ok?",
+      items: [],
+      preview: "synthetic preview",
+      initiatedBy: "synthetic-requester",
+      requiredApprover: "synthetic-reviewer",
+      requireDifferentApprover: true,
+      resumeToken: "eyJ...",
+      approvalId: "dbc98d05",
+    };
     runtime.runToolRequest.mockResolvedValue({
       ...success,
       status: "needs_approval",
@@ -219,6 +228,36 @@ describe("createEmbeddedLobsterRunner", () => {
     );
 
     expect(loadRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a pre-aborted caller before loading the embedded runtime", async () => {
+    const { loadRuntime, runner } = createRunner();
+    const controller = new AbortController();
+    const reason = new Error("private caller detail");
+    controller.abort(reason);
+
+    await expect(runner.run(runParams({ signal: controller.signal }))).rejects.toMatchObject({
+      name: "AbortError",
+      message: "lobster execution cancelled before dispatch.",
+      cause: reason,
+    });
+    expect(loadRuntime).not.toHaveBeenCalled();
+  });
+
+  it("preserves a final runtime envelope when the caller aborts as it returns", async () => {
+    const { runtime, runner } = createRunner();
+    const controller = new AbortController();
+    runtime.runToolRequest.mockImplementation(async () => {
+      const envelope = { ...success, output: [{ effect: "completed" }] };
+      controller.abort(new Error("private caller detail"));
+      return envelope;
+    });
+
+    await expect(runner.run(runParams({ signal: controller.signal }))).resolves.toMatchObject({
+      ok: true,
+      status: "ok",
+      output: [{ effect: "completed" }],
+    });
   });
 
   it("loads the published package core runtime", async () => {
@@ -295,6 +334,9 @@ describe("createEmbeddedLobsterRunner", () => {
         }),
     );
 
-    await expect(runner.run(runParams({ timeoutMs: 200 }))).rejects.toThrow(/timed out|aborted/);
+    await expect(runner.run(runParams({ timeoutMs: 200 }))).rejects.toMatchObject({
+      name: "Error",
+      message: "lobster runtime timed out",
+    });
   });
 });

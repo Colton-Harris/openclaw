@@ -40,7 +40,7 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       timeoutMs: optionalPositiveIntegerSchema(),
       maxStdoutBytes: optionalPositiveIntegerSchema(),
     }),
-    async execute(_id: string, params: Record<string, unknown>) {
+    async execute(_id: string, params: Record<string, unknown>, signal?: AbortSignal) {
       const action = typeof params.action === "string" ? params.action.trim() : "";
       if (!action) {
         throw new Error("action required");
@@ -66,6 +66,7 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
         ...(typeof params.approve === "boolean" ? { approve: params.approve } : {}),
         ...(typeof params.responseJson === "string" ? { responseJson: params.responseJson } : {}),
         ...(typeof params.cancel === "boolean" ? { cancel: params.cancel } : {}),
+        ...(signal ? { signal } : {}),
         cwd,
         timeoutMs,
         maxStdoutBytes,

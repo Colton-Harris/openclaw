@@ -121,8 +121,8 @@ function fixture(
   let cursor: string | null = null;
   const learnBatch = vi.fn<MiniMeContentStore["learnBatch"]>(async (input) => {
     cursor = input.cursor ?? null;
-    source.status = "ready";
-    source.detail = null;
+    source.status = input.sourceStatus?.status ?? "ready";
+    source.detail = input.sourceStatus?.detail ?? null;
     snapshot.beliefs.push(...input.beliefs);
     return { contentRevision: ++snapshot.contentRevision, applied: input.beliefs };
   });
@@ -227,25 +227,29 @@ function fixture(
     holds++;
     return releaseOperator;
   });
-  const operatorAuthority = createAdmittedRunOperatorAuthority({
-    profileId: "owner",
-    scopes: ["operator.write"],
-    assertCurrent: () => {
-      if (!originalCurrent || (!foregroundOpen && !holds)) {
-        throw new Error("original source revoked");
-      }
-    },
-    retain: retainOperator,
-  });
-  const request = {
-    ownerId: "owner",
-    profile,
-    config: { agents: { entries: { "mini-agent": { workspace: "/synthetic/mini-workspace" } } } },
-    operatorAuthority,
-    assertCurrent: operatorAuthority.assertCurrent,
+  const makeRequest = () => {
+    const operatorAuthority = createAdmittedRunOperatorAuthority({
+      profileId: "owner",
+      scopes: ["operator.write"],
+      assertCurrent: () => {
+        if (!originalCurrent || (!foregroundOpen && !holds)) {
+          throw new Error("original source revoked");
+        }
+      },
+      retain: retainOperator,
+    });
+    return {
+      ownerId: "owner",
+      profile,
+      config: { agents: { entries: { "mini-agent": { workspace: "/synthetic/mini-workspace" } } } },
+      operatorAuthority,
+      assertCurrent: operatorAuthority.assertCurrent,
+    };
   };
+  const request = makeRequest();
   return {
     request,
+    freshRequest: makeRequest,
     profile,
     source,
     snapshot,
@@ -492,6 +496,14 @@ describe("Mini Me automatic selected-source queue", () => {
       ["page-3", "page-4"],
       ["page-4", "page-5"],
     ]);
+    const committedStatuses = f.learnBatch.mock.calls.map(([input]) => input.sourceStatus);
+    for (const status of committedStatuses.slice(0, -1)) {
+      expect(status).toMatchObject({
+        status: "pending",
+        detail: expect.stringContaining("still learning"),
+      });
+    }
+    expect(committedStatuses.at(-1)).toEqual({ status: "ready", detail: null });
     // Two pages per round: rounds one and two each disclose that learning continues.
     expect(
       f.updateSourceStatus.mock.calls.filter(([input]) => input.detail?.includes("still learning")),
@@ -504,7 +516,7 @@ describe("Mini Me automatic selected-source queue", () => {
   it("discloses the bounded admission limit and resumes from committed progress on a later trigger", async () => {
     const f = fixture("conversation");
     f.pages(67);
-    queueMiniMeLearning(f.request);
+    queueMiniMeLearning(f.freshRequest());
     await f.done();
     expect(f.storedCursor()).toBe("page-66");
     expect(f.source).toMatchObject({

@@ -109,7 +109,30 @@ export async function readTrustedPluginSessionFacts(
             const prUnavailable =
               !pullRequests || pullRequests.status !== "ready" || pullRequests.rateLimited;
             unavailable ||= prUnavailable;
-            const digest = row.observerDigest ? record.entry.observerDigest : undefined;
+            const terminalStatus =
+              row.status !== undefined && row.status !== "queued" && row.status !== "running"
+                ? row.status
+                : undefined;
+            const runReceipt =
+              row.hasActiveRun !== true && row.lastRunId && terminalStatus
+                ? { runId: row.lastRunId, status: terminalStatus }
+                : undefined;
+            const candidateDigest = row.observerDigest ? record.entry.observerDigest : undefined;
+            const activeRunProjected =
+              row.hasActiveRun === true || row.status === "running" || row.status === "queued";
+            const digestRunIsCurrent =
+              candidateDigest?.runId === undefined ||
+              (activeRunProjected
+                ? row.activeRunIds?.includes(candidateDigest.runId) === true
+                : runReceipt?.runId === candidateDigest.runId);
+            const digestIsCurrentOrUnprovenancedAdvisory =
+              candidateDigest !== undefined &&
+              digestRunIsCurrent &&
+              (candidateDigest.sessionId === undefined ||
+                candidateDigest.sessionId === row.sessionId) &&
+              (candidateDigest.lifecycleRevision === undefined ||
+                candidateDigest.lifecycleRevision === record.entry.lifecycleRevision);
+            const digest = digestIsCurrentOrUnprovenancedAdvisory ? candidateDigest : undefined;
             sessions.push({
               key: record.key,
               sessionId: record.entry.sessionId,
@@ -129,10 +152,13 @@ export async function readTrustedPluginSessionFacts(
                       row.lastRunError
                     ? "failed"
                     : "idle",
+              ...(runReceipt ? { runReceipt } : {}),
+              goalStatus: row.goal?.status ?? "none",
               ...(digest
                 ? {
                     observerDigest: {
                       health: digest.health,
+                      ...(digest.runId !== undefined ? { runId: digest.runId } : {}),
                       headline: safeText(digest.headline, 120) ?? "",
                       assessment: safeText(digest.assessment, 320),
                       revision: digest.revision,

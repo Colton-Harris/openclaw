@@ -170,7 +170,16 @@ async function runLearning(job: LearningJob, lifecycle: MiniMeLifecycleOwner): P
     /** Extract one bounded page and atomically commit its beliefs with the next cursor. */
     const learn = async (
       source: MiniMeSource,
-      evidence: { text: string; revision: string; expectedCursor: string | null; cursor: string },
+      evidence: {
+        text: string;
+        revision: string;
+        expectedCursor: string | null;
+        cursor: string;
+        sourceStatus?: {
+          status: Extract<MiniMeSource["status"], "pending" | "ready">;
+          detail: string | null;
+        };
+      },
       assertSource: () => void,
     ): Promise<number> => {
       const { text, revision } = evidence;
@@ -219,6 +228,7 @@ async function runLearning(job: LearningJob, lifecycle: MiniMeLifecycleOwner): P
           sourceId: source.id,
           expectedCursor: evidence.expectedCursor,
           cursor: evidence.cursor,
+          ...(evidence.sourceStatus ? { sourceStatus: evidence.sourceStatus } : {}),
           beliefs,
         });
         assertSource();
@@ -309,6 +319,9 @@ async function runLearning(job: LearningJob, lifecycle: MiniMeLifecycleOwner): P
                   revision: page.revision,
                   expectedCursor: cursor,
                   cursor: page.cursor,
+                  sourceStatus: page.complete
+                    ? { status: "ready", detail: null }
+                    : { status: "pending", detail: CONTINUING_DETAIL },
                 },
                 assertSource,
               )) > 0 || learnedAny;

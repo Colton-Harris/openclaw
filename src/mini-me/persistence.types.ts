@@ -243,6 +243,10 @@ export type MiniMeContentWorkerOperations = {
       sourceId?: string;
       expectedCursor?: string | null;
       cursor?: string | null;
+      sourceStatus?: {
+        status: Extract<MiniMeSource["status"], "pending" | "ready">;
+        detail: string | null;
+      };
     };
     output: { contentRevision: number; applied: MiniMeBelief[] };
   };

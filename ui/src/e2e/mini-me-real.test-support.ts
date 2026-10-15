@@ -8,7 +8,7 @@ import type { Locator, Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 import { expect } from "vitest";
 import type { ApplicationGateway } from "../app/gateway.ts";
-import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
+import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 
 export type ObservedResponse = {
   params: unknown;
@@ -180,8 +180,6 @@ export async function checkAndCapture(
     return;
   }
   await surface.scrollIntoViewIfNeeded();
-  const frame = await takeControlUiScreenshotFrame(page, surface, content, {
-    animations: "disabled",
-  });
-  await writeFile(path.join(directory, `${name}.png`), frame.png);
+  const png = await takeControlUiViewportScreenshot(page, surface, content);
+  await writeFile(path.join(directory, `${name}.png`), png);
 }

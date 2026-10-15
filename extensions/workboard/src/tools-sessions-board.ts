@@ -1,3 +1,7 @@
+import {
+  WORKBOARD_SESSIONS_GOAL_STATUSES,
+  WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES,
+} from "@openclaw/workboard-contract";
 import { jsonResult, readStringParam } from "openclaw/plugin-sdk/core";
 import type { AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
 import { asNonArrayRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
@@ -28,6 +32,12 @@ const matchRuleSchema = strictObject({
   ),
   run: Type.Optional(
     Type.Array(Type.Union([Type.Literal("active"), Type.Literal("idle"), Type.Literal("failed")])),
+  ),
+  runReceiptStatus: Type.Optional(
+    Type.Array(Type.String({ enum: [...WORKBOARD_SESSIONS_RUN_RECEIPT_STATUSES] })),
+  ),
+  goalStatus: Type.Optional(
+    Type.Array(Type.String({ enum: [...WORKBOARD_SESSIONS_GOAL_STATUSES] })),
   ),
   pullRequest: Type.Optional(
     Type.Array(
@@ -98,7 +108,7 @@ export function createWorkboardSessionsBoardTools(params: {
       name: "workboard_sessions_board_read",
       label: "Sessions Board Read",
       description:
-        "Read a Sessions board and its session placements. Columns match Gateway-owned session status, observer health, and pull-request facts in order; operator pins take precedence. Card tools do not apply to Sessions boards.",
+        "Read a Sessions board and its session placements. Columns match current Gateway lifecycle and goal receipts, advisory observer health, and pull-request facts in order; operator pins take precedence. Card tools do not apply to Sessions boards.",
       parameters: strictObject({ boardId: boardIdField }),
       execute: async (_toolCallId, rawParams) => {
         const record = asNonArrayRecord(rawParams);
@@ -111,7 +121,7 @@ export function createWorkboardSessionsBoardTools(params: {
       name: "workboard_sessions_board_update",
       label: "Sessions Board Update",
       description:
-        "Edit a Sessions board's columns, match rules, or scope. columns replaces the full ordered list; preserve ids when renaming labels. All fields in each rule must match; a match array accepts any rule, and the first matching column wins. Exactly one fallback is required. Card tools do not apply to Sessions boards.",
+        "Edit a Sessions board's columns, match rules, or scope. Match rules can use observer health, current run and goal receipts, or pull-request facts. columns replaces the full ordered list; preserve ids when renaming labels. All fields in each rule must match; a match array accepts any rule, and the first matching column wins. Exactly one fallback is required. Card tools do not apply to Sessions boards.",
       parameters: strictObject({
         boardId: boardIdField,
         columns: Type.Optional(Type.Array(columnSchema, { minItems: 2, maxItems: 12 })),

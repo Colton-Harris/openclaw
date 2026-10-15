@@ -13,6 +13,17 @@ function specWithMatch(match: unknown) {
 describe("Sessions board match normalization", () => {
   it.each([
     { name: "one rule", match: { run: ["active"] }, expected: { run: ["active"] } },
+    {
+      name: "canonical run and goal receipts",
+      match: {
+        runReceiptStatus: ["done", "interrupted", "done"],
+        goalStatus: ["complete", "none", "none"],
+      },
+      expected: {
+        runReceiptStatus: ["done", "interrupted"],
+        goalStatus: ["complete", "none"],
+      },
+    },
     { name: "a singleton array", match: [{ run: ["active"] }], expected: { run: ["active"] } },
     {
       name: "any-of rules",
@@ -32,6 +43,16 @@ describe("Sessions board match normalization", () => {
     { name: "string rules", match: ["failed"], error: "must be an object" },
     { name: "unknown fields", match: [{ state: ["failed"] }], error: "Unknown column match" },
     { name: "invalid facts", match: [{ run: ["unknown"] }], error: "unsupported value" },
+    {
+      name: "nonterminal run receipt statuses",
+      match: { runReceiptStatus: ["running"] },
+      error: "unsupported value",
+    },
+    {
+      name: "unknown goal statuses",
+      match: { goalStatus: ["completed"] },
+      error: "unsupported value",
+    },
   ])("rejects $name", ({ match, error }) => {
     expect(() => normalizeWorkboardSessionsBoardSpec(specWithMatch(match))).toThrow(error);
   });

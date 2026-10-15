@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, expect, it } from "vitest";
 import {
   resolveRuntimeWorkerArgv,
@@ -182,9 +183,6 @@ async function runMiniMeChild<K extends MiniMePersistenceReply["kind"]>(
     await closed;
   }
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
 
 function parseVerifiedArchive(stdout: string) {
   const value: unknown = JSON.parse(stdout);

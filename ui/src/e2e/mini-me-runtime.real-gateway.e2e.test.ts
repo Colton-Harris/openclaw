@@ -657,4 +657,139 @@ suite.define(() => {
       },
     });
   }, 120_000);
+  it("SYNTHETIC fresh Gateway resumes one committed pending page", async (test) => {
+    await suite.runScenario(test, {
+      retainedState: () => fixture?.instance.stateDir,
+      async run(signal) {
+        const current = requireFixture();
+        const { provider } = current;
+        await suite.withPage(contextOptions, async ({ page }) => {
+          const observer = observeMiniMe(page);
+          await openOwnerPage(page);
+          let snapshot = await call<MiniMeSnapshot>(page, "miniMe.create", createParams([]));
+          const sourceKey = "agent:main:mini-me-restart-source";
+          const sessionId = await createPrivateSession(page, sourceKey, "main");
+          provider.script("RESTART_INGRESS", null);
+          await settleRun(
+            page,
+            await sendTurn(
+              page,
+              sourceKey,
+              "[[cell:RESTART_INGRESS]] SYNTHETIC source owner ingress.",
+            ),
+          );
+          await seedConversationHistory({ fixture: current, sessionKey: sourceKey, sessionId });
+          const before = provider.extractions.length;
+          provider.holdExtractionAt(before + 2);
+          await call(page, "miniMe.source.add", {
+            operationId: randomUUID(),
+            source: { kind: "conversation", sessionKey: sourceKey, mode: "ongoing" },
+          });
+          const held = await provider.until(() => provider.heldExtraction(), signal);
+          snapshot = await call<MiniMeSnapshot>(page, "miniMe.get", {});
+          expect(conversationSource(snapshot)).toMatchObject({
+            status: "pending",
+            detail:
+              "Mini Me is still learning from this conversation; it continues from where it stopped.",
+          });
+          expect(inferredBeliefs(snapshot, MORNING_SCOPE)).toHaveLength(1);
+          expect(inferredBeliefs(snapshot, EVENING_SCOPE)).toHaveLength(0);
+          expect(provider.extractions[before]!.sourceText).toContain(SEEDED_LINES.pageOne);
+          expect(provider.extractions[before]!.sourceText).not.toContain(SEEDED_LINES.pageTwo);
+          expect(held.sourceText).toContain(SEEDED_LINES.pageTwo);
+          expect(held.closed).toBe(false);
+          await current.instance.stopGateway();
+          await provider.until(() => (held.closed ? true : undefined), signal);
+          await current.instance.startGateway();
+          await openOwnerPage(page);
+          snapshot = await call<MiniMeSnapshot>(page, "miniMe.get", {});
+          expect(conversationSource(snapshot)).toMatchObject({
+            status: "pending",
+            detail:
+              "Mini Me is still learning from this conversation; it continues from where it stopped.",
+          });
+          expect(inferredBeliefs(snapshot, MORNING_SCOPE)).toHaveLength(1);
+          expect(inferredBeliefs(snapshot, EVENING_SCOPE)).toHaveLength(0);
+          expect(provider.extractions).toHaveLength(before + 2);
+          await page.goto(new URL("mini-me", current.baseUrl).href);
+          await waitForControlUiGatewayReady(page);
+          await page.getByRole("tab", { name: "Sources", exact: true }).click();
+          await page
+            .getByText(
+              "Mini Me is still learning from this conversation; it continues from where it stopped.",
+              { exact: false },
+            )
+            .waitFor();
+          await page.screenshot({
+            path: path.join(suite.artifactDir, "01-restarted-pending-source.png"),
+            fullPage: true,
+          });
+          expect(provider.extractions).toHaveLength(before + 2);
+          const configure = async (patch: Record<string, unknown>) =>
+            (snapshot = await call<MiniMeSnapshot>(page, "miniMe.configure", {
+              operationId: randomUUID(),
+              expectedRevision: snapshot.profile!.revision,
+              ...patch,
+            }));
+          await configure({ learningPaused: true });
+          await configure({ models: { ...snapshot.profile!.models, allowInference: false } });
+          expect(provider.extractions).toHaveLength(before + 2);
+          await configure({
+            models: { ...snapshot.profile!.models, allowInference: true },
+            learningPaused: false,
+          });
+          snapshot = await untilSnapshot(
+            page,
+            observer,
+            (next) =>
+              conversationSource(next)?.status === "ready" &&
+              inferredBeliefs(next, EVENING_SCOPE).length === 1,
+            signal,
+          );
+          expect(inferredBeliefs(snapshot, MORNING_SCOPE)).toHaveLength(1);
+          expect(inferredBeliefs(snapshot, EVENING_SCOPE)).toHaveLength(1);
+          expect(provider.extractions).toHaveLength(before + 3);
+          expect(provider.extractions[before + 2]!.sourceText).toContain(SEEDED_LINES.pageTwo);
+          expect(provider.extractions[before + 2]!.sourceText).not.toContain(SEEDED_LINES.pageOne);
+          await configure({ learningPaused: true });
+          const removedKey = "agent:main:mini-me-restart-removed";
+          const removedSessionId = await createPrivateSession(page, removedKey, "main");
+          await seedConversationHistory({
+            fixture: current,
+            sessionKey: removedKey,
+            sessionId: removedSessionId,
+          });
+          snapshot = await call<MiniMeSnapshot>(page, "miniMe.source.add", {
+            operationId: randomUUID(),
+            source: { kind: "conversation", sessionKey: removedKey, mode: "ongoing" },
+          });
+          const removedSource = snapshot.sources.find(
+            (source) =>
+              source.selection.kind === "conversation" &&
+              source.selection.sessionKey === removedKey,
+          );
+          expect(removedSource).toBeDefined();
+          snapshot = await call<MiniMeSnapshot>(page, "miniMe.source.remove", {
+            operationId: randomUUID(),
+            sourceId: removedSource!.id,
+          });
+          await configure({ learningPaused: false });
+          snapshot = await call<MiniMeSnapshot>(page, "miniMe.get", {});
+          expect(snapshot.sources.some((source) => source.id === removedSource!.id)).toBe(false);
+          expect(provider.extractions).toHaveLength(before + 3);
+          expect(provider.failures).toEqual([]);
+          await page.goto(new URL("mini-me", current.baseUrl).href);
+          await waitForControlUiGatewayReady(page);
+          await page.getByRole("tab", { name: "Sources", exact: true }).click();
+          await page.screenshot({
+            path: path.join(suite.artifactDir, "02-resumed-source-ready.png"),
+            fullPage: true,
+          });
+          process.stdout.write(
+            "[Mini Me actual Gateway restart] committed page-one pending survived; readonly reopen made no extraction; fresh owner write resumed page-two once; pause/consent/removal guards passed.\n",
+          );
+        });
+      },
+    });
+  }, 120_000);
 });
