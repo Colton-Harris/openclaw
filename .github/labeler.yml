@@ -191,6 +191,12 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/visitor-access/**"
+"plugin: macropad":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/macropad/**"
+          - "docs/plugins/feature-plugins.md"
+          - "docs/plugins/sdk-subpaths.md"
 "channel: imessage":
   - changed-files:
       - any-glob-to-any-file:

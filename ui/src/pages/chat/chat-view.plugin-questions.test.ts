@@ -6,6 +6,7 @@ import type {
   ControlUiHost,
   ControlUiReplacement,
   ControlUiSurface,
+  ControlUiSurfaceProps,
 } from "../../../../src/plugin-sdk/control-ui.js";
 import type { ApplicationContext } from "../../app/context.ts";
 import {
@@ -19,6 +20,7 @@ import { resetComposerFixture } from "./chat-composer.test-support.ts";
 import { resetChatViewState } from "./chat-view-state.ts";
 import { createChatProps } from "./chat-view.test-helpers.ts";
 import { ChatView, type ChatProps } from "./chat-view.tsx";
+import { getChatComposerState } from "./components/chat-composer-state.ts";
 import { questionPanelIn } from "./components/chat-question-card.test-support.ts";
 import {
   installTranscriptDomMocks,
@@ -38,6 +40,8 @@ function createPluginChat(replacement: ControlUiReplacement<"composer">) {
   const lifetime = new AbortController();
   const pluginHost = {
     signal: lifetime.signal,
+    window: { focus: vi.fn<() => Promise<boolean>>().mockResolvedValue(true) },
+    links: { openExternal: vi.fn<() => Promise<boolean>>().mockResolvedValue(true) },
     sessions: {},
     agents: {},
     navigation: {},
@@ -217,4 +221,35 @@ it("keeps one actionable local queue row with a nondelegating plugin composer", 
   expect(row?.getAttribute("data-chat-queue-item")).toBe("local-row");
   row?.querySelector<HTMLButtonElement>(".chat-queue__remove")?.click();
   expect(onQueueRemove).toHaveBeenCalledExactlyOnceWith("local-row");
+});
+
+it("forwards plugin composer dictation controls to the active conversation", async () => {
+  let composerProps: ControlUiSurfaceProps["composer"] | undefined;
+  const { render } = createPluginChat({
+    id: "dictation-bridge",
+    label: "Dictation bridge",
+    surface: "composer",
+    mount(container, view) {
+      composerProps = view.props;
+      return { dispose: view.mountDefault(container) };
+    },
+  });
+  const paneId = "plugin-dictation-bridge";
+  render(createChatProps({ paneId, sessionKey: "agent:main:dictation" }));
+
+  await waitForSolid(() => {
+    expect(composerProps).toBeDefined();
+    expect(getChatComposerState(paneId).dictation).toBeDefined();
+  });
+  const dictation = getChatComposerState(paneId).dictation;
+  if (!dictation || !composerProps) {
+    throw new Error("Expected the built-in composer dictation controller and plugin props");
+  }
+  const startDirect = vi.spyOn(dictation, "startDirect").mockReturnValue(true);
+  const finishActive = vi.spyOn(dictation, "finishActive").mockResolvedValue(true);
+
+  expect(composerProps.startDictation?.()).toBe(true);
+  await expect(composerProps.finishDictation?.()).resolves.toBe(true);
+  expect(startDirect).toHaveBeenCalledOnce();
+  expect(finishActive).toHaveBeenCalledOnce();
 });

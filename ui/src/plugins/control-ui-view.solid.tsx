@@ -207,6 +207,20 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
             value.abort!();
           }
         : undefined,
+      startDictation: value.startDictation
+        ? () => {
+            check();
+            return value.startDictation!();
+          }
+        : undefined,
+      finishDictation: value.finishDictation
+        ? async () => {
+            check();
+            const result = await value.finishDictation!();
+            check();
+            return result;
+          }
+        : undefined,
     };
   };
   const fail = (failure: unknown) => {

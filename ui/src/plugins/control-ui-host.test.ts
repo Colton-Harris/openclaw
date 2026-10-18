@@ -60,6 +60,28 @@ function createRosterHost(request: GatewayBrowserClient["request"]) {
 }
 
 describe("native UI roster refresh", () => {
+  it("scopes window focus and external links to the plugin view", async () => {
+    const fixture = createRosterHost(vi.fn().mockResolvedValue(undefined));
+    const focus = vi.spyOn(fixture.host.window, "focus").mockResolvedValue(true);
+    const openExternal = vi.spyOn(fixture.host.links, "openExternal").mockResolvedValue(true);
+    const view = new AbortController();
+    const scoped = scopeControlUiHost(fixture.host, view.signal);
+    try {
+      await expect(scoped.window.focus()).resolves.toBe(true);
+      await expect(scoped.links.openExternal("https://example.com/")).resolves.toBe(true);
+      view.abort();
+      expect(() => scoped.window.focus()).toThrow("This plugin UI view has ended.");
+      expect(() => scoped.links.openExternal("https://example.com/")).toThrow(
+        "This plugin UI view has ended.",
+      );
+      expect(focus).toHaveBeenCalledOnce();
+      expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://example.com/");
+    } finally {
+      view.abort();
+      fixture.dispose();
+    }
+  });
+
   it("forwards dock conversation creation through the host to the Gateway", async () => {
     const key = "agent:main:board-agent";
     const request = vi.fn(async (method: string) => {

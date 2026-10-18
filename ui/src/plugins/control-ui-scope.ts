@@ -131,6 +131,8 @@ export function scopeControlUiHost(
     agents: services(host.agents),
     navigation: services(host.navigation),
     dock: host.dock ? services(host.dock) : undefined,
+    window: services(host.window),
+    links: services(host.links),
     ui: services(host.ui),
     components: services(host.components),
   };

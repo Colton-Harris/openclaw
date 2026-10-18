@@ -511,6 +511,13 @@ function ChatContent(input: { props: ChatProps }) {
                             setDraft: input.props.onDraftChange,
                             send: async () => input.props.onSend(),
                             abort: input.props.onAbort,
+                            startDictation: () =>
+                              getChatComposerState(input.props.paneId).dictation?.startDirect() ??
+                              false,
+                            finishDictation: async () =>
+                              (await getChatComposerState(
+                                input.props.paneId,
+                              ).dictation?.finishActive()) ?? false,
                           },
                         }}
                         viewProps={viewProps()}

@@ -20,6 +20,8 @@ export type ControlUiDisposer = () => void;
 
 export type ControlUiConnection = {
   connected: boolean;
+  /** Gateway hello connection identity; absent on hosts that do not expose it. */
+  connectionId?: string | null;
   canRead: boolean;
   canWrite: boolean;
   canGrant: boolean;
@@ -95,6 +97,10 @@ export type ControlUiSurfaceProps = {
     /** Resolves true on admission, false on rejection, or void for a local command/no submit. */
     send: () => Promise<boolean | void>;
     abort?: () => void;
+    /** Start native composer dictation for this captured conversation. */
+    startDictation?: () => boolean;
+    /** Finish native composer dictation for this captured conversation. */
+    finishDictation?: () => Promise<boolean>;
   };
   workspace: BoardGetParams & { routeId: string };
   transcript: BoardGetParams & {
@@ -225,6 +231,14 @@ export type ControlUiHost = {
    * The Gateway enforces connection scopes, not a per-plugin RPC allowlist.
    */
   request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>;
+  /** Focus the owning Control UI window; false means focus was not confirmed. */
+  window: {
+    focus: () => Promise<boolean>;
+  };
+  /** Open a validated external HTTP(S) link through the owning Control UI. */
+  links: {
+    openExternal: (url: string) => Promise<boolean>;
+  };
   onEvent: (event: string, listener: (payload: unknown) => void) => ControlUiDisposer;
   subscribe: (listener: () => void) => ControlUiDisposer;
   sessions: {

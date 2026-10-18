@@ -7,6 +7,7 @@ import type {
 import { serializeSidebarEntry } from "../app-navigation.ts";
 import { isRouteId, pathForRoute, pluginTabLocation } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
+import { focusControlUiWindow, openControlUiExternalLink } from "../app/native-window-focus.ts";
 import { hasOperatorReadAccess, readGatewayOperatorAccess } from "../app/operator-access.ts";
 import {
   PLUGIN_PANEL_TOGGLE_EVENT,
@@ -99,6 +100,12 @@ export function createControlUiPluginHost(
       return i18n.getLocale();
     },
     redact: redactToolDetail,
+    window: {
+      focus: () => call(() => focusControlUiWindow(owner.abort.signal)),
+    },
+    links: {
+      openExternal: (url) => call(() => openControlUiExternalLink(url, owner.abort.signal)),
+    },
     components: createControlUiComponents({
       current,
       signal: owner.abort.signal,
@@ -109,6 +116,8 @@ export function createControlUiPluginHost(
       const access = readGatewayOperatorAccess(snapshot);
       return {
         connected: snapshot.phase === "connected",
+        connectionId:
+          snapshot.phase === "connected" ? (snapshot.hello?.server?.connId ?? null) : null,
         canRead: hasOperatorReadAccess(snapshot.hello?.auth ?? null),
         canWrite: access.canWrite,
         canGrant: access.canGrantApprovals,

@@ -553,6 +553,7 @@ it.each(["plugins.changed", "plugins.controlUi.changed"] as const)(
 
       // Optional contributions can be absent at activation or registered later.
       expect(runtime.errors).toEqual([]);
+      expect(first.host.connection.connectionId).toBe("native-connection-one");
       first.host.ui.registerWidget({ id: "late", label: "Late widget", mount: () => undefined });
       expect(runtime.registrations("widgets")).toHaveLength(1);
       expect(runtime.errors).toEqual([]);

@@ -207,8 +207,11 @@ does not expose a separate headless chat service for a completely independent
 workspace.
 
 A composer replacement receives the current draft, admission state, disabled
-reason, and standard `setDraft`, `send`, and optional `abort` operations. Use
-these operations instead of issuing a raw chat RPC. `send()` resolves `true`
+reason, and standard `setDraft`, `send`, and optional `abort` operations. It may
+also receive `startDictation()` and `finishDictation()` for the captured native
+composer; the former returns `false` when dictation cannot start, and the latter
+returns whether dictation finished and committed. Use these operations instead
+of issuing a raw chat RPC. `send()` resolves `true`
 when admitted, `false` when rejected, or `undefined` for a local command or no
 submission. Show rejected submissions rather than clearing the draft. Composer
 operations retire when the view stops being presented, even while its DOM and
@@ -223,13 +226,20 @@ Use the host for shared application behavior:
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `agents`                | Agent snapshots, selection, scope, and refresh.                                                               |
 | `components`            | Host-owned dialogs, pickers, and session dashboards.                                                          |
-| `connection`            | Current connection and operator capabilities.                                                                 |
+| `connection`            | Current connection identity (when available) and operator capabilities.                                       |
 | `dock` (optional)       | Open a conversation beside the current page with `openSession`, close the dock, and observe `openSessionKey`. |
+| `window`                | Focus the owning Control UI window and report whether focus was confirmed.                                    |
+| `links`                 | Open validated HTTP(S) URLs through the host's external-link policy.                                          |
 | `navigation`            | Open plugin pages and build their URLs.                                                                       |
 | `request` and `onEvent` | Authenticated Gateway requests and event subscriptions.                                                       |
 | `sessions`              | Session snapshots, independent queries, navigation, creation, and updates.                                    |
 | `subscribe`             | Observe host snapshot changes, including the docked session key.                                              |
 | `ui`                    | Register, select, and invalidate plugin contributions.                                                        |
+
+`host.connection.connectionId` is the current Gateway hello connection ID when
+the host provides it; disconnected or older hosts may report `null` or omit the
+field. Plugins that use it to bind external input should fail closed when no
+current identity is available.
 
 Session and agent `refresh()` operations fetch new snapshots and reject on failure, so a plugin
 can display an error and offer Retry. `host.sessions.rows` is the current

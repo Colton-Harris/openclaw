@@ -23,6 +23,8 @@ function createRuntime(initial?: ControlUiReplacement<"workspace" | "composer">)
   const pluginHost = {
     signal: abort.signal,
     request,
+    window: { focus: vi.fn<() => Promise<boolean>>().mockResolvedValue(true) },
+    links: { openExternal: vi.fn<() => Promise<boolean>>().mockResolvedValue(true) },
     sessions: {},
     agents: {},
     navigation: {},
@@ -87,6 +89,8 @@ function mountSurface(
     }),
     send: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
     abort: vi.fn(),
+    startDictation: vi.fn(() => true),
+    finishDictation: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
   };
   const [revision, setRevision] = createSignal(0);
   const [presented, setPresented] = createSignal(true);
@@ -125,6 +129,8 @@ function mountSurface(
               setDraft: state.setDraft,
               send: state.send,
               abort: state.abort,
+              startDictation: state.startDictation,
+              finishDictation: state.finishDictation,
             }}
             renderDefault={renderDefault}
             renderCompanion={() => (
@@ -439,6 +445,8 @@ describe("native UI built-in delegation", () => {
         throw new Error("Expected the composer replacement to mount");
       }
       current.props.setDraft("Current draft");
+      expect(current.props.startDictation?.()).toBe(true);
+      await expect(current.props.finishDictation?.()).resolves.toBe(true);
       const send = createDeferred<boolean>();
       state.send.mockReturnValueOnce(send.promise);
       const pending = expect(current.props.send()).rejects.toThrow("view has ended");
@@ -450,9 +458,13 @@ describe("native UI built-in delegation", () => {
       // Presentation retires operations synchronously without retiring the mounted host.
       expect(() => current.props.setDraft("Stale draft")).toThrow("view has ended");
       expect(() => current.props.abort?.()).toThrow("view has ended");
+      expect(() => current.props.startDictation?.()).toThrow("view has ended");
+      await expect(current.props.finishDictation?.()).rejects.toThrow("view has ended");
       const hiddenSend = expect(current.props.send()).rejects.toThrow("view has ended");
       expect(current.signal.aborted).toBe(false);
       expect(state.send).toHaveBeenCalledOnce();
+      expect(state.startDictation).toHaveBeenCalledOnce();
+      expect(state.finishDictation).toHaveBeenCalledOnce();
       expect(state.abort).not.toHaveBeenCalled();
       expect(state.draft).toBe("Current draft");
 
@@ -486,6 +498,8 @@ describe("native UI built-in delegation", () => {
       expect(successor.presented).toBe(true);
       expect(successor.signal).toBe(current.signal);
       successor.props.setDraft("Successor draft");
+      expect(successor.props.startDictation?.()).toBe(true);
+      await expect(successor.props.finishDictation?.()).resolves.toBe(true);
       expect(state.draft).toBe("Successor draft");
       await expect(successor.props.send()).resolves.toBe(true);
       successor.props.abort?.();

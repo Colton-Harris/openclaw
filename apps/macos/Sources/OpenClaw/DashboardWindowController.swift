@@ -158,6 +158,7 @@ final class DashboardWindowController: NSWindowController, WKNavigationDelegate,
         let deviceSettingsMessageHandler = DashboardDeviceSettingsMessageHandler()
         self.deviceSettingsMessageHandler = deviceSettingsMessageHandler
         let browserMessageHandler = DashboardBrowserMessageHandler()
+        let windowFocusMessageHandler = DashboardWindowFocusMessageHandler()
         let documentHost = ControlUIDocumentHost(
             url: url,
             auth: auth,
@@ -181,6 +182,8 @@ final class DashboardWindowController: NSWindowController, WKNavigationDelegate,
                 deviceSettingsMessageHandler, contentWorld: .page, name: Self.deviceSettingsMessageHandlerName)
             controller.addScriptMessageHandler(
                 browserMessageHandler, contentWorld: .page, name: DashboardBrowserMessageHandler.name)
+            controller.addScriptMessageHandler(
+                windowFocusMessageHandler, contentWorld: .page, name: DashboardWindowFocusMessageHandler.name)
             if shouldEnableUpdateBridge {
                 // Handler presence is the Control UI feature probe; unsigned builds
                 // and remote dashboards must not advertise a local app update.
@@ -234,6 +237,7 @@ final class DashboardWindowController: NSWindowController, WKNavigationDelegate,
         appLinkMessageHandler.owner = self
         deviceSettingsMessageHandler.owner = self
         browserMessageHandler.owner = self
+        windowFocusMessageHandler.owner = self
         deviceSettingsMessageHandler.startObserving()
         self.webView.navigationDelegate = self
         self.webView.uiDelegate = self
@@ -992,6 +996,31 @@ extension DashboardWindowController {
         // Personal browser sign-in requires the current Control UI's listener-owned fact.
         self.documentHost.hasLiveContent && self.pendingGatewaySwitch == nil && self.isTrustedDashboardDocument &&
             (!self.auth.usesBrowserIdentity || self.nativeCommandsReady)
+    }
+
+    func receiveWindowFocusMessage(
+        _ message: WKScriptMessage,
+        replyHandler: @escaping @MainActor (Any?, String?) -> Void)
+    {
+        guard message.webView === self.webView, message.frameInfo.isMainFrame,
+              ControlUIDocumentHost.isTrustedLinkSource(message.frameInfo.request.url, dashboardURL: self.currentURL),
+              self.documentHost.hasLiveContent, self.documentHost.hasCurrentBrowserSession,
+              self.pendingGatewaySwitch == nil, !self.isShowingFailurePage, !self.webView.isLoading,
+              let body = message.body as? [String: Any], body.count == 1,
+              body["type"] as? String == "focus-window", let window
+        else {
+            replyHandler(nil, "The current trusted dashboard window is required.")
+            return
+        }
+        guard AppActivation.shared.allowsActivation else {
+            replyHandler(["focused": false], nil)
+            return
+        }
+        AppActivation.shared.deminiaturize(window: window)
+        AppActivation.shared.activate()
+        AppActivation.shared.makeKeyAndOrderFront(window: window)
+        window.makeFirstResponder(self.webView)
+        replyHandler(["focused": window.isKeyWindow && NSApp.isActive], nil)
     }
 
     private func refreshNativeCommandReadiness() {

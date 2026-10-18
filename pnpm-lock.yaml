@@ -1576,6 +1576,22 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/macropad:
+    dependencies:
+      koffi:
+        specifier: 3.3.2
+        version: 3.3.2
+      typebox:
+        specifier: 1.3.36
+        version: 1.3.36
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/matrix:
     dependencies:
       '@matrix-org/matrix-sdk-crypto-nodejs':
